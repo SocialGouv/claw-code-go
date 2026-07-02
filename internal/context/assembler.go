@@ -16,6 +16,9 @@ type AssembleOptions struct {
 	Environment         bool
 	GitStatus           bool
 	ProjectInstructions bool
+	// Memory configures CLAUDE.md discovery (walk-up, imports, size cap)
+	// when ProjectInstructions is enabled.
+	Memory MemoryOptions
 }
 
 // DefaultAssembleOptions returns the all-on default (Claude Code parity).
@@ -24,6 +27,7 @@ func DefaultAssembleOptions() AssembleOptions {
 		Environment:         true,
 		GitStatus:           true,
 		ProjectInstructions: true,
+		Memory:              DefaultMemoryOptions(),
 	}
 }
 
@@ -33,10 +37,11 @@ type Assembler struct {
 
 	opts AssembleOptions
 
-	mu          sync.Mutex
-	memCache    string
-	memMtimes   map[string]int64
-	frontmatter *config.FrontmatterConfig
+	mu            sync.Mutex
+	memCache      string
+	memMtimes     map[string]int64 // files actually read on the last load (incl. imports)
+	memCandidates map[string]int64 // discovery candidates present on the last check
+	frontmatter   *config.FrontmatterConfig
 }
 
 // NewAssembler creates an Assembler for the given working directory with all
@@ -80,17 +85,33 @@ func (a *Assembler) Assemble() string {
 	return strings.Join(sections, "\n\n")
 }
 
-// loadMemory returns cached CLAUDE.md content, re-reading only when files change.
+// loadMemory returns cached CLAUDE.md content, re-reading only when files
+// change. Revalidation is two-part: re-stat the discovery candidates (notices
+// created/deleted memory files) and the files actually read on the last load
+// (notices edited roots AND imports).
 func (a *Assembler) loadMemory() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	current := MemoryFileMtimes(a.WorkDir)
-	if !mtimesEqual(current, a.memMtimes) {
-		a.memCache = LoadMemoryFiles(a.WorkDir)
-		a.memMtimes = current
+	candidates := MemoryCandidateMtimes(a.WorkDir, a.opts.Memory)
+	if mtimesEqual(candidates, a.memCandidates) && mtimesEqual(currentMtimes(a.memMtimes), a.memMtimes) {
+		return a.memCache
 	}
+	a.memCache, a.memMtimes = LoadMemory(a.WorkDir, a.opts.Memory)
+	a.memCandidates = candidates
 	return a.memCache
+}
+
+// currentMtimes re-stats the paths in prev, returning their current mtimes
+// (absent paths are omitted, so a deleted import invalidates the cache).
+func currentMtimes(prev map[string]int64) map[string]int64 {
+	result := make(map[string]int64, len(prev))
+	for p := range prev {
+		if info, err := os.Stat(p); err == nil {
+			result[p] = info.ModTime().UnixNano()
+		}
+	}
+	return result
 }
 
 // LoadFrontmatter reads the primary CLAUDE.md in the work directory and parses

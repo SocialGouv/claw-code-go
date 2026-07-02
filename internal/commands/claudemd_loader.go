@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
+
+	clawctx "github.com/SocialGouv/claw-code-go/internal/context"
 )
 
 // LoadClaudeMdCommands walks from startDir up to the filesystem root,
@@ -55,25 +56,10 @@ func LoadClaudeMdCommands(r *Registry, startDir string) error {
 
 // findAncestorClaudeMd returns CLAUDE.md paths from startDir up to /.
 // startDir comes first; files higher up are appended in order so the
-// caller can let leaves win on conflicts.
+// caller can let leaves win on conflicts. Delegates to the canonical
+// walk-up in internal/context (shared with memory loading).
 func findAncestorClaudeMd(startDir string) ([]string, error) {
-	abs, err := filepath.Abs(startDir)
-	if err != nil {
-		return nil, err
-	}
-	var paths []string
-	for {
-		candidate := filepath.Join(abs, "CLAUDE.md")
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			paths = append(paths, candidate)
-		}
-		parent := filepath.Dir(abs)
-		if parent == abs {
-			break
-		}
-		abs = parent
-	}
-	return paths, nil
+	return clawctx.AncestorClaudeMdPaths(startDir)
 }
 
 // parseClaudeMdCommands scans markdown for H2 headers starting with /.
