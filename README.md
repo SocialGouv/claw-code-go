@@ -121,6 +121,15 @@ Local plugin manager in [`plugin/`](plugin/) with install / uninstall / list / d
 - 📜 **Timeline** subcommand renders chronological event view (`pretty` | `json` | `md`).
 - 🧹 **Compaction** with `Pre/PostCompact` hooks, summary compression, and recent-N-turns preservation.
 
+### 🧠 Memory & prompt sections
+
+Claude Code-parity memory ([`internal/context/`](internal/context/)) with every automatic system-prompt section individually toggleable — heavy prompt engineering hurts small models, so everything is opt-out:
+
+- 📖 **CLAUDE.md discovery** — `~/.claude/CLAUDE.md`, ancestor directories (recursive walk-up), `<cwd>/CLAUDE.md`, `<cwd>/.claude/CLAUDE.md`; `@path` imports expand recursively (5 hops, cycle-safe, code fences skipped); 48KB combined cap.
+- 💾 **Auto memory** — per-workspace persistent `MEMORY.md` under `~/.claw-code/memory/<fingerprint>/` (override: `CLAW_MEMORY_DIR`), injected at session start with maintenance instructions; the model updates it with the standard file tools.
+- 🧭 **Operating posture** — an authored behavioral section (read-before-edit, git safety, concision, verification honesty). Original text, not a Claude Code copy; embedding hosts compose it via `pkg/runtime.OperatingPosture()` / `BuildSystemContext()`.
+- 🎛️ **Toggles everywhere** — tri-state `"prompt"` block in `settings.json` (`{"prompt": {"minimal": true, "projectInstructions": true}}` = CLAUDE.md only), CLI `--minimal-prompt` / `--prompt-sections` / `--disable-prompt-sections`, CLAUDE.md frontmatter `minimalPrompt` / `promptSections` / `disablePromptSections`. Sections: `environment`, `git-status`, `project-instructions`, `mcp-tools`, `compaction-summary`, `memory-walk-up`, `memory-imports`, `auto-memory`, `posture`. Defaults all-on (zero behavior change); inspect the result with `claw-code-go print-system-prompt --minimal-prompt`.
+
 ### ⚡ Prompt caching
 
 Anthropic-native [`cache_control` breakpoint manager](internal/apikit/prompt_cache.go) with session-scoped fingerprints, cache-break detection (unexpected drops in `cache_read_input_tokens`), and persistent stats (hits / misses / writes / unexpected breaks). Cache-aware retry logic in `internal/apikit/retry.go`.
@@ -160,11 +169,11 @@ claw-code-go timeline --session <id> [--format pretty|json|md] [--limit n]
 claw-code-go plugin install --marketplace <url> [--require-signed] <name>
 claw-code-go dump-manifests [--json]
 claw-code-go bootstrap-plan
-claw-code-go print-system-prompt [--cwd ...] [--date ...]
+claw-code-go print-system-prompt [--cwd ...] [--date ...] [--minimal-prompt] [--prompt-sections ...]
 claw-code-go resume-session <file> [commands...]
 ```
 
-Main-mode flags include `--model`, `--permission-mode`, `--allowed-tools`, `--reasoning-effort`, `--output-format`, `--session-dir`, `--work-dir`, and `--dangerously-skip-permissions`.
+Main-mode flags include `--model`, `--permission-mode`, `--allowed-tools`, `--reasoning-effort`, `--output-format`, `--session-dir`, `--work-dir`, `--dangerously-skip-permissions`, and the prompt-section toggles `--minimal-prompt` / `--prompt-sections` / `--disable-prompt-sections`.
 
 ---
 
