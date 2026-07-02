@@ -239,6 +239,12 @@ func (loop *ConversationLoop) systemPrompt() string {
 	var parts []string
 	parts = append(parts, systemPromptBase)
 
+	// Inject the authored operating-posture section (gated: it is the
+	// heaviest fixed section for small models).
+	if p.Posture {
+		parts = append(parts, clawctx.OperatingPosture)
+	}
+
 	// Inject project context (Phase 12): environment, git status, CLAUDE.md.
 	if loop.CtxAssembler != nil {
 		if ctx := loop.CtxAssembler.Assemble(); ctx != "" {

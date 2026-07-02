@@ -111,7 +111,7 @@ func TestSystemPromptSectionGating(t *testing.T) {
 		}
 	}
 
-	// Defaults (nil prompt config): compaction summary present.
+	// Defaults (nil prompt config): posture + compaction summary present.
 	got := newLoop(nil).systemPrompt()
 	if !strings.Contains(got, summary) {
 		t.Errorf("default prompt config: compaction summary missing:\n%s", got)
@@ -119,12 +119,24 @@ func TestSystemPromptSectionGating(t *testing.T) {
 	if !strings.HasPrefix(got, systemPromptBase) {
 		t.Errorf("system prompt must start with the base sentence")
 	}
+	if !strings.Contains(got, "# Operating posture") {
+		t.Errorf("default prompt config: posture missing:\n%s", got)
+	}
+	if strings.Index(got, "# Operating posture") < len(systemPromptBase) {
+		t.Errorf("posture must come after the base sentence")
+	}
 
-	// Minimal: compaction summary gated off.
+	// Minimal: posture + compaction summary gated off.
 	minimal := MinimalPromptConfig()
 	got = newLoop(&minimal).systemPrompt()
 	if strings.Contains(got, summary) {
 		t.Errorf("minimal prompt config: compaction summary leaked:\n%s", got)
+	}
+	if strings.Contains(got, "# Operating posture") {
+		t.Errorf("minimal prompt config: posture leaked:\n%s", got)
+	}
+	if got != systemPromptBase {
+		t.Errorf("minimal + no assembler: want bare base sentence, got:\n%s", got)
 	}
 
 	// nil Config on the loop: falls back to defaults without panicking.
