@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/SocialGouv/claw-code-go/internal/config"
+	clawctx "github.com/SocialGouv/claw-code-go/internal/context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,6 +139,22 @@ func MinimalPromptConfig() PromptConfig {
 	return PromptConfig{}
 }
 
+// AssembleOptions maps the resolved prompt config onto the context
+// assembler's section toggles — the single place the mapping lives.
+func (p PromptConfig) AssembleOptions() clawctx.AssembleOptions {
+	return clawctx.AssembleOptions{
+		Environment:         p.Environment,
+		GitStatus:           p.GitStatus,
+		ProjectInstructions: p.ProjectInstructions,
+		AutoMemory:          p.AutoMemory,
+		Memory: clawctx.MemoryOptions{
+			WalkUp:   p.MemoryWalkUp,
+			Imports:  p.MemoryImports,
+			MaxBytes: p.MemoryMaxBytes,
+		},
+	}
+}
+
 // ResolvePromptConfig resolves a tri-state settings block into a concrete
 // PromptConfig: each section is its explicit value when set, else on unless
 // "minimal" flips the default off.
@@ -166,18 +183,22 @@ func ResolvePromptConfig(p *config.RuntimePromptConfig) PromptConfig {
 	}
 }
 
-// promptSectionFields maps normalized section names (lowercase, "-"/"_"
-// stripped, so "git-status" == "gitStatus") to their PromptConfig field.
-var promptSectionFields = map[string]func(*PromptConfig) *bool{
-	"environment":         func(p *PromptConfig) *bool { return &p.Environment },
-	"gitstatus":           func(p *PromptConfig) *bool { return &p.GitStatus },
-	"projectinstructions": func(p *PromptConfig) *bool { return &p.ProjectInstructions },
-	"mcptools":            func(p *PromptConfig) *bool { return &p.McpTools },
-	"compactionsummary":   func(p *PromptConfig) *bool { return &p.CompactionSummary },
-	"memorywalkup":        func(p *PromptConfig) *bool { return &p.MemoryWalkUp },
-	"memoryimports":       func(p *PromptConfig) *bool { return &p.MemoryImports },
-	"automemory":          func(p *PromptConfig) *bool { return &p.AutoMemory },
-	"posture":             func(p *PromptConfig) *bool { return &p.Posture },
+// promptSections is the single registry of toggleable sections: canonical
+// (kebab-case) name + PromptConfig field accessor. Lookups normalize the
+// input (lowercase, "-"/"_" stripped), so "git-status" == "gitStatus".
+var promptSections = []struct {
+	canonical string
+	field     func(*PromptConfig) *bool
+}{
+	{"environment", func(p *PromptConfig) *bool { return &p.Environment }},
+	{"git-status", func(p *PromptConfig) *bool { return &p.GitStatus }},
+	{"project-instructions", func(p *PromptConfig) *bool { return &p.ProjectInstructions }},
+	{"mcp-tools", func(p *PromptConfig) *bool { return &p.McpTools }},
+	{"compaction-summary", func(p *PromptConfig) *bool { return &p.CompactionSummary }},
+	{"memory-walk-up", func(p *PromptConfig) *bool { return &p.MemoryWalkUp }},
+	{"memory-imports", func(p *PromptConfig) *bool { return &p.MemoryImports }},
+	{"auto-memory", func(p *PromptConfig) *bool { return &p.AutoMemory }},
+	{"posture", func(p *PromptConfig) *bool { return &p.Posture }},
 }
 
 func normalizePromptSection(name string) string {
@@ -186,14 +207,26 @@ func normalizePromptSection(name string) string {
 	return strings.ReplaceAll(name, "_", "")
 }
 
+// promptSectionField resolves a user-supplied section name to its
+// PromptConfig field accessor.
+func promptSectionField(name string) (func(*PromptConfig) *bool, bool) {
+	normalized := normalizePromptSection(name)
+	for _, s := range promptSections {
+		if normalizePromptSection(s.canonical) == normalized {
+			return s.field, true
+		}
+	}
+	return nil, false
+}
+
 // PromptSectionNames returns the canonical section names accepted by
 // ApplyPromptSectionOverrides (for help text and error messages).
 func PromptSectionNames() []string {
-	return []string{
-		"environment", "git-status", "project-instructions", "mcp-tools",
-		"compaction-summary", "memory-walk-up", "memory-imports",
-		"auto-memory", "posture",
+	names := make([]string, len(promptSections))
+	for i, s := range promptSections {
+		names[i] = s.canonical
 	}
+	return names
 }
 
 // ApplyPromptSectionOverrides applies CLI/frontmatter-style section overrides
@@ -214,7 +247,7 @@ func ApplyPromptSectionOverrides(cfg *Config, minimal bool, only, disable []stri
 	}
 	set := func(names []string, val bool) error {
 		for _, name := range names {
-			field, ok := promptSectionFields[normalizePromptSection(name)]
+			field, ok := promptSectionField(name)
 			if !ok {
 				return fmt.Errorf("unknown prompt section %q (valid: %s)",
 					name, strings.Join(PromptSectionNames(), ", "))

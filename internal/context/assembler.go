@@ -2,11 +2,8 @@ package context
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
-
-	"github.com/SocialGouv/claw-code-go/internal/config"
 )
 
 // AssembleOptions selects which context sections Assemble emits. The zero
@@ -45,7 +42,6 @@ type Assembler struct {
 	memCache      string
 	memMtimes     map[string]int64 // files actually read on the last load (incl. imports)
 	memCandidates map[string]int64 // discovery candidates present on the last check
-	frontmatter   *config.FrontmatterConfig
 }
 
 // NewAssembler creates an Assembler for the given working directory with all
@@ -122,35 +118,6 @@ func currentMtimes(prev map[string]int64) map[string]int64 {
 		}
 	}
 	return result
-}
-
-// LoadFrontmatter reads the primary CLAUDE.md in the work directory and parses
-// any YAML frontmatter config overrides. Returns nil if no frontmatter found.
-func (a *Assembler) LoadFrontmatter() *config.FrontmatterConfig {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.frontmatter != nil {
-		return a.frontmatter
-	}
-	data, err := os.ReadFile(filepath.Join(a.WorkDir, "CLAUDE.md"))
-	if err != nil {
-		return nil
-	}
-	fm, _, err := config.ParseFrontmatter(data)
-	if err != nil {
-		return nil
-	}
-	if fm.HasOverrides() {
-		a.frontmatter = &fm
-	}
-	return a.frontmatter
-}
-
-// Frontmatter returns the parsed frontmatter config from CLAUDE.md, if any.
-func (a *Assembler) Frontmatter() *config.FrontmatterConfig {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.frontmatter
 }
 
 func mtimesEqual(a, b map[string]int64) bool {

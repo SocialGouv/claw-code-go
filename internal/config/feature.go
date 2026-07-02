@@ -15,14 +15,15 @@ type RuntimeFeatureConfig struct {
 	ProviderFallbacks ProviderFallbackConfig
 	TrustedRoots      []string
 	Sandbox           RuntimeSandboxConfig
-	Prompt            RuntimePromptConfig
 }
 
 // RuntimePromptConfig holds the system-prompt section toggles from the
-// settings "prompt" block. All booleans are tri-state: nil means "use the
-// default" (on, unless Minimal is set). Tri-state pointers are required
-// because settings merging is non-zero-wins — a plain bool could never
-// carry an explicit false across layers.
+// settings "prompt" block, decoded via Settings.Prompt (typed unmarshal,
+// merged field-wise across layers — NOT via ExtractFeatureConfig, whose
+// RawJSON only carries the last-loaded file). All booleans are tri-state:
+// nil means "use the default" (on, unless Minimal is set). Tri-state
+// pointers are required because settings merging is non-zero-wins — a
+// plain bool could never carry an explicit false across layers.
 type RuntimePromptConfig struct {
 	// Minimal flips the default of every section to off. Explicit
 	// per-section values always win over Minimal.
@@ -220,11 +221,6 @@ func ExtractFeatureConfig(data []byte) RuntimeFeatureConfig {
 	// Trusted roots
 	if v, ok := raw["trustedRoots"]; ok {
 		json.Unmarshal(v, &cfg.TrustedRoots)
-	}
-
-	// Prompt section toggles (struct tags match the settings keys exactly).
-	if v, ok := raw["prompt"]; ok {
-		_ = json.Unmarshal(v, &cfg.Prompt)
 	}
 
 	// Sandbox

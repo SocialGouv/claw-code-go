@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/SocialGouv/claw-code-go/internal/commands"
 	"github.com/SocialGouv/claw-code-go/internal/runtime"
+	"github.com/SocialGouv/claw-code-go/internal/strutil"
 	"github.com/SocialGouv/claw-code-go/internal/tools"
 	"os"
 	"path/filepath"
@@ -170,20 +171,6 @@ func RunBootstrapPlan(args []string) {
 	}
 }
 
-// splitCommaFlag splits a comma-separated flag value into trimmed non-empty items.
-func splitCommaFlag(value string) []string {
-	if value == "" {
-		return nil
-	}
-	var items []string
-	for _, item := range strings.Split(value, ",") {
-		if item = strings.TrimSpace(item); item != "" {
-			items = append(items, item)
-		}
-	}
-	return items
-}
-
 // RunPrintSystemPrompt implements the print-system-prompt subcommand.
 // It renders the full system prompt that would be sent to the model.
 func RunPrintSystemPrompt(args []string) {
@@ -198,7 +185,7 @@ func RunPrintSystemPrompt(args []string) {
 	cfg := runtime.LoadConfig()
 	if *minimalPromptFlag || *promptSectionsFlag != "" || *disablePromptSectionsFlag != "" {
 		err := runtime.ApplyPromptSectionOverrides(cfg, *minimalPromptFlag,
-			splitCommaFlag(*promptSectionsFlag), splitCommaFlag(*disablePromptSectionsFlag))
+			strutil.SplitComma(*promptSectionsFlag), strutil.SplitComma(*disablePromptSectionsFlag))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)

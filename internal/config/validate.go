@@ -265,21 +265,6 @@ func ValidateSettingsJSON(data []byte, filePath string) ValidationResult {
 		var prompt map[string]json.RawMessage
 		if json.Unmarshal(promptRaw, &prompt) == nil {
 			validateObjectKeys(prompt, promptFields, "prompt.", filePath, data, &result)
-			for _, spec := range promptFields {
-				val, ok2 := prompt[spec.name]
-				if !ok2 {
-					continue
-				}
-				gotType := jsonTypeName(val)
-				if gotType != spec.jsonType && gotType != "null" {
-					result.Errors = append(result.Errors, ConfigDiagnostic{
-						Path:  filePath,
-						Field: "prompt." + spec.name,
-						Line:  findKeyLine(data, spec.name),
-						Kind:  WrongTypeDiag{Expected: spec.jsonType, Got: gotType},
-					})
-				}
-			}
 		} else {
 			result.Errors = append(result.Errors, ConfigDiagnostic{
 				Path:  filePath,
@@ -317,23 +302,6 @@ func ValidateSettingsJSON(data []byte, filePath string) ValidationResult {
 		}
 	}
 
-	// Type-check top-level fields.
-	for _, spec := range topLevelFields {
-		val, ok := raw[spec.name]
-		if !ok {
-			continue
-		}
-		gotType := jsonTypeName(val)
-		if gotType != spec.jsonType && gotType != "null" {
-			result.Errors = append(result.Errors, ConfigDiagnostic{
-				Path:  filePath,
-				Field: spec.name,
-				Line:  findKeyLine(data, spec.name),
-				Kind:  WrongTypeDiag{Expected: spec.jsonType, Got: gotType},
-			})
-		}
-	}
-
 	return result
 }
 
@@ -351,14 +319,24 @@ func FormatDiagnostics(result *ValidationResult) string {
 
 func validateObjectKeys(obj map[string]json.RawMessage, known []fieldSpec, prefix, filePath string, source []byte, result *ValidationResult) {
 	knownNames := make([]string, len(known))
-	knownSet := make(map[string]bool, len(known))
+	knownSet := make(map[string]fieldSpec, len(known))
 	for i, f := range known {
 		knownNames[i] = f.name
-		knownSet[f.name] = true
+		knownSet[f.name] = f
 	}
 
-	for key := range obj {
-		if knownSet[key] {
+	for key, val := range obj {
+		if spec, ok := knownSet[key]; ok {
+			// Known key: type-check the value.
+			gotType := jsonTypeName(val)
+			if gotType != spec.jsonType && gotType != "null" {
+				result.Errors = append(result.Errors, ConfigDiagnostic{
+					Path:  filePath,
+					Field: prefix + key,
+					Line:  findKeyLine(source, key),
+					Kind:  WrongTypeDiag{Expected: spec.jsonType, Got: gotType},
+				})
+			}
 			continue
 		}
 		// Skip deprecated fields (handled separately).

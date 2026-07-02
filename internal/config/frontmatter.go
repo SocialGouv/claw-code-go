@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/SocialGouv/claw-code-go/internal/strutil"
 )
 
 // FrontmatterConfig holds config overrides parsed from CLAUDE.md YAML frontmatter.
@@ -161,12 +163,5 @@ func ParseFrontmatter(content []byte) (FrontmatterConfig, []byte, error) {
 // splitInlineList splits an inline YAML-ish list value ("a, b" or "[a, b]")
 // into trimmed non-empty items.
 func splitInlineList(value string) []string {
-	value = strings.TrimSuffix(strings.TrimPrefix(value, "["), "]")
-	var items []string
-	for _, item := range strings.Split(value, ",") {
-		if item = strings.TrimSpace(item); item != "" {
-			items = append(items, item)
-		}
-	}
-	return items
+	return strutil.SplitComma(strings.TrimSuffix(strings.TrimPrefix(value, "["), "]"))
 }

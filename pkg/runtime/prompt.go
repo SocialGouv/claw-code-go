@@ -52,17 +52,11 @@ func OperatingPosture() string {
 // memory) for workDir according to cfg. It deliberately excludes the base
 // identity sentence and the operating posture — the host owns its base
 // prompt and opts into each piece.
+//
+// Each call builds a fresh assembler, so nothing is cached between calls:
+// every invocation re-walks ancestors, re-reads memory files, and re-runs
+// git. Hosts calling this per model turn should cache the result themselves
+// and refresh on their own cadence.
 func BuildSystemContext(workDir string, cfg PromptConfig) string {
-	opts := clawctx.AssembleOptions{
-		Environment:         cfg.Environment,
-		GitStatus:           cfg.GitStatus,
-		ProjectInstructions: cfg.ProjectInstructions,
-		AutoMemory:          cfg.AutoMemory,
-		Memory: clawctx.MemoryOptions{
-			WalkUp:   cfg.MemoryWalkUp,
-			Imports:  cfg.MemoryImports,
-			MaxBytes: cfg.MemoryMaxBytes,
-		},
-	}
-	return clawctx.NewAssemblerWithOptions(workDir, opts).Assemble()
+	return clawctx.NewAssemblerWithOptions(workDir, cfg.AssembleOptions()).Assemble()
 }

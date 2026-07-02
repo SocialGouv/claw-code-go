@@ -1,36 +1,33 @@
 package config
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
 
 func boolPtr(b bool) *bool { return &b }
 
-func TestExtractFeatureConfigPrompt(t *testing.T) {
-	data := []byte(`{"prompt": {"minimal": true, "gitStatus": false, "projectInstructions": true, "memoryMaxBytes": 1024}}`)
-	cfg := ExtractFeatureConfig(data)
-	if cfg.Prompt.Minimal == nil || !*cfg.Prompt.Minimal {
-		t.Errorf("Minimal = %v, want true", cfg.Prompt.Minimal)
+// Settings.Prompt (typed unmarshal + field-wise merge) is the single decode
+// point for the prompt block: the "prompt" settings block is decoded when a
+// settings file unmarshals into Settings.
+func TestSettingsPromptDecode(t *testing.T) {
+	var s Settings
+	data := []byte(`{"prompt": {"minimal": true, "gitStatus": false, "memoryMaxBytes": 1024}}`)
+	if err := json.Unmarshal(data, &s); err != nil {
+		t.Fatal(err)
 	}
-	if cfg.Prompt.GitStatus == nil || *cfg.Prompt.GitStatus {
-		t.Errorf("GitStatus = %v, want false", cfg.Prompt.GitStatus)
+	if s.Prompt == nil || s.Prompt.Minimal == nil || !*s.Prompt.Minimal {
+		t.Errorf("Minimal not decoded: %+v", s.Prompt)
 	}
-	if cfg.Prompt.ProjectInstructions == nil || !*cfg.Prompt.ProjectInstructions {
-		t.Errorf("ProjectInstructions = %v, want true", cfg.Prompt.ProjectInstructions)
+	if s.Prompt.GitStatus == nil || *s.Prompt.GitStatus {
+		t.Errorf("GitStatus = %v, want false", s.Prompt.GitStatus)
 	}
-	if cfg.Prompt.Environment != nil {
-		t.Errorf("Environment = %v, want nil (unset)", cfg.Prompt.Environment)
+	if s.Prompt.Environment != nil {
+		t.Errorf("Environment = %v, want nil (unset)", s.Prompt.Environment)
 	}
-	if cfg.Prompt.MemoryMaxBytes != 1024 {
-		t.Errorf("MemoryMaxBytes = %d, want 1024", cfg.Prompt.MemoryMaxBytes)
-	}
-}
-
-func TestExtractFeatureConfigPromptAbsent(t *testing.T) {
-	cfg := ExtractFeatureConfig([]byte(`{"model": "m"}`))
-	if cfg.Prompt.Minimal != nil || cfg.Prompt.Environment != nil {
-		t.Errorf("Prompt = %+v, want all-nil", cfg.Prompt)
+	if s.Prompt.MemoryMaxBytes != 1024 {
+		t.Errorf("MemoryMaxBytes = %d, want 1024", s.Prompt.MemoryMaxBytes)
 	}
 }
 

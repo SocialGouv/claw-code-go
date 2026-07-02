@@ -12,6 +12,7 @@ import (
 	"github.com/SocialGouv/claw-code-go/internal/permissions"
 	"github.com/SocialGouv/claw-code-go/internal/plugins"
 	"github.com/SocialGouv/claw-code-go/internal/runtime"
+	"github.com/SocialGouv/claw-code-go/internal/strutil"
 	"github.com/SocialGouv/claw-code-go/internal/tui"
 	"github.com/SocialGouv/claw-code-go/plugin"
 	"os"
@@ -166,8 +167,8 @@ func main() {
 
 	// Prompt-section overrides (highest precedence, after settings + frontmatter).
 	if *minimalPromptFlag || *promptSectionsFlag != "" || *disablePromptSectionsFlag != "" {
-		only := splitCommaList(*promptSectionsFlag)
-		disable := splitCommaList(*disablePromptSectionsFlag)
+		only := strutil.SplitComma(*promptSectionsFlag)
+		disable := strutil.SplitComma(*disablePromptSectionsFlag)
 		if err := runtime.ApplyPromptSectionOverrides(cfg, *minimalPromptFlag, only, disable); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -289,20 +290,6 @@ func main() {
 
 	// Interactive TUI mode.
 	runTUI(cfg, loop)
-}
-
-// splitCommaList splits a comma-separated flag value into trimmed non-empty items.
-func splitCommaList(value string) []string {
-	if value == "" {
-		return nil
-	}
-	var items []string
-	for _, item := range strings.Split(value, ",") {
-		if item = strings.TrimSpace(item); item != "" {
-			items = append(items, item)
-		}
-	}
-	return items
 }
 
 // bootstrap initializes the runtime subsystems in the correct order:

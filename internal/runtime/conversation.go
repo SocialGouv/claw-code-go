@@ -169,29 +169,12 @@ func NewConversationLoop(cfg *Config, client api.APIClient) *ConversationLoop {
 		},
 		Permissions:    DefaultPermissions(),
 		Config:         cfg,
-		CtxAssembler:   clawctx.NewAssemblerWithOptions(workDir, assembleOptionsFor(cfg)),
+		CtxAssembler:   clawctx.NewAssemblerWithOptions(workDir, cfg.PromptOrDefault().AssembleOptions()),
 		Usage:          usage.NewTracker(cfg.Model),
 		TaskRegistry:   task.NewRegistry(),
 		TeamRegistry:   team.NewTeamRegistry(),
 		CronRegistry:   team.NewCronRegistry(),
 		WorkerRegistry: worker.NewWorkerRegistry(),
-	}
-}
-
-// assembleOptionsFor maps the resolved prompt config onto the context
-// assembler's section toggles (nil config → all-on defaults).
-func assembleOptionsFor(cfg *Config) clawctx.AssembleOptions {
-	p := cfg.PromptOrDefault()
-	return clawctx.AssembleOptions{
-		Environment:         p.Environment,
-		GitStatus:           p.GitStatus,
-		ProjectInstructions: p.ProjectInstructions,
-		AutoMemory:          p.AutoMemory,
-		Memory: clawctx.MemoryOptions{
-			WalkUp:   p.MemoryWalkUp,
-			Imports:  p.MemoryImports,
-			MaxBytes: p.MemoryMaxBytes,
-		},
 	}
 }
 
