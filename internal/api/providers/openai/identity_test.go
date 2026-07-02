@@ -25,8 +25,8 @@ func TestNewClient_UserAgentResolution(t *testing.T) {
 
 	// API-key mode defaults to the honest claw identity.
 	c := newClient(t, api.ProviderConfig{APIKey: "sk-test"})
-	if !strings.HasPrefix(c.UserAgent, "claw-code-go/") {
-		t.Errorf("api-key mode UserAgent = %q, want claw-code-go/<version>", c.UserAgent)
+	if !strings.HasPrefix(c.Identity.UserAgent, "claw-code-go/") {
+		t.Errorf("api-key mode UserAgent = %q, want claw-code-go/<version>", c.Identity.UserAgent)
 	}
 
 	// ChatGPT-OAuth mode defaults to the codex identity the backend requires.
@@ -36,33 +36,35 @@ func TestNewClient_UserAgentResolution(t *testing.T) {
 		OpenAIClientVersion:    "0.131.0",
 	}
 	c = newClient(t, oauthCfg)
-	if c.UserAgent != "codex_cli_rs/0.131.0" {
-		t.Errorf("oauth mode UserAgent = %q, want codex_cli_rs/0.131.0", c.UserAgent)
+	if c.Identity.UserAgent != "codex_cli_rs/0.131.0" {
+		t.Errorf("oauth mode UserAgent = %q, want codex_cli_rs/0.131.0", c.Identity.UserAgent)
 	}
 
 	// Explicit override wins in both modes (operator decision).
 	oauthCfg.UserAgent = "my-tool/1.0"
-	if c = newClient(t, oauthCfg); c.UserAgent != "my-tool/1.0" {
-		t.Errorf("oauth explicit override UserAgent = %q, want my-tool/1.0", c.UserAgent)
+	if c = newClient(t, oauthCfg); c.Identity.UserAgent != "my-tool/1.0" {
+		t.Errorf("oauth explicit override UserAgent = %q, want my-tool/1.0", c.Identity.UserAgent)
 	}
 
 	// Env override beats the mode default.
 	t.Setenv(api.EnvUserAgent, "env-tool/2.0")
 	c = newClient(t, api.ProviderConfig{APIKey: "sk-test"})
-	if c.UserAgent != "env-tool/2.0" {
-		t.Errorf("env override UserAgent = %q, want env-tool/2.0", c.UserAgent)
+	if c.Identity.UserAgent != "env-tool/2.0" {
+		t.Errorf("env override UserAgent = %q, want env-tool/2.0", c.Identity.UserAgent)
 	}
 }
 
-// TestApplyIdentityHeaders_ExtraHeadersLast verifies extra headers are able
-// to override the resolved User-Agent (ANTHROPIC_CUSTOM_HEADERS parity).
-func TestApplyIdentityHeaders_ExtraHeadersLast(t *testing.T) {
+// TestIdentityApply_ExtraHeadersLast verifies extra headers are able to
+// override the resolved User-Agent (ANTHROPIC_CUSTOM_HEADERS parity).
+func TestIdentityApply_ExtraHeadersLast(t *testing.T) {
 	c := &Client{
-		UserAgent:    "resolved/1.0",
-		ExtraHeaders: map[string]string{"User-Agent": "extra/2.0", "X-Team": "iterion"},
+		Identity: api.Identity{
+			UserAgent:    "resolved/1.0",
+			ExtraHeaders: map[string]string{"User-Agent": "extra/2.0", "X-Team": "iterion"},
+		},
 	}
 	req, _ := http.NewRequest(http.MethodPost, "https://example/", nil)
-	c.applyIdentityHeaders(req)
+	c.Identity.Apply(req.Header)
 	if got := req.Header.Get("User-Agent"); got != "extra/2.0" {
 		t.Errorf("User-Agent = %q, want extra/2.0 (extra headers win)", got)
 	}

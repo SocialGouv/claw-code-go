@@ -11,7 +11,7 @@ import (
 // Regression: a property whose declared JSON schema is the permissive
 // empty form `{}` ("any value", e.g. iterion's `FieldTypeJSON`) must
 // round-trip through Property as `{}`, not as `{"type": ""}`. OpenAI's
-// function-schema validator rejects empty `type` with HTTP 400 (`'' is
+// function-schema validator rejects empty `type` with HTTP 400 (`” is
 // not valid under any of the given schemas`), which surfaced in the
 // claw structured-output recovery path when verdict schemas contained
 // any-typed fields.

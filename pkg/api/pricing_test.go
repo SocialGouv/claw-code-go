@@ -55,11 +55,11 @@ func TestLookupModelPricing_FromLiveCache(t *testing.T) {
 	}
 
 	cases := []struct {
-		name     string
-		input    string
-		wantOK   bool
-		wantIn   float64
-		wantOut  float64
+		name    string
+		input   string
+		wantOK  bool
+		wantIn  float64
+		wantOut float64
 	}{
 		{"canonical hit", "gpt-5.5", true, 2.0, 15.0},
 		{"alias hit", "openai/gpt-5.5", true, 2.0, 15.0},

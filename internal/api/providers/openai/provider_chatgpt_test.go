@@ -115,11 +115,12 @@ func TestSetAuthHeaders_ChatGPTOAuth(t *testing.T) {
 		OAuthToken:       "tok-123",
 		ChatGPTAccountID: "acct-abc",
 		ClientVersion:    "0.130.0",
-		UserAgent:        "codex_cli_rs/0.130.0", // as resolved by NewClient in OAuth mode
+		// as resolved by NewClient in OAuth mode
+		Identity: api.Identity{UserAgent: "codex_cli_rs/0.130.0"},
 	}
 	req, _ := http.NewRequest(http.MethodPost, "https://example/", nil)
 	c.setAuthHeaders(req)
-	c.applyIdentityHeaders(req)
+	c.Identity.Apply(req.Header)
 
 	cases := map[string]string{
 		"Authorization":      "Bearer tok-123",

@@ -652,63 +652,6 @@ func splitNonEmpty(s string) []string {
 	return result
 }
 
-func TestAnthropicRequestProfileHeaders(t *testing.T) {
-	profile := NewAnthropicRequestProfile(
-		NewClientIdentity("claude-code", "1.2.3").WithRuntime("go-cli"),
-	).WithBeta("tools-2026-04-01").
-		WithExtraBody("metadata", map[string]any{"source": "test"})
-
-	headers := profile.HeaderPairs()
-	if len(headers) != 3 {
-		t.Fatalf("expected 3 header pairs, got %d", len(headers))
-	}
-	if headers[0][0] != "anthropic-version" || headers[0][1] != DefaultAnthropicVersion {
-		t.Errorf("wrong anthropic-version header: %v", headers[0])
-	}
-	if headers[1][0] != "user-agent" || headers[1][1] != "claude-code/1.2.3" {
-		t.Errorf("wrong user-agent header: %v", headers[1])
-	}
-	expected := "claude-code-20250219,prompt-caching-scope-2026-01-05,tools-2026-04-01"
-	if headers[2][0] != "anthropic-beta" || headers[2][1] != expected {
-		t.Errorf("wrong anthropic-beta header: %v", headers[2])
-	}
-}
-
-func TestAnthropicRequestProfileRenderJSONBody(t *testing.T) {
-	profile := NewAnthropicRequestProfile(NewClientIdentity("claude-code", "1.2.3")).
-		WithExtraBody("metadata", map[string]any{"source": "test"})
-
-	body, err := profile.RenderJSONBody(map[string]any{"model": "claude-sonnet"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	metadata, ok := body["metadata"].(map[string]any)
-	if !ok {
-		t.Fatal("metadata field not found or wrong type")
-	}
-	if metadata["source"] != "test" {
-		t.Errorf("expected source=test, got %v", metadata["source"])
-	}
-	if body["betas"] == nil {
-		t.Error("betas should be in body")
-	}
-}
-
-func TestWithBetaDeduplication(t *testing.T) {
-	profile := NewAnthropicRequestProfile(NewClientIdentity("test", "1.0")).
-		WithBeta(DefaultAgenticBeta) // Already present by default
-	if len(profile.Betas) != 2 {
-		t.Errorf("expected 2 betas (no duplicate), got %d", len(profile.Betas))
-	}
-}
-
-func TestClientIdentityUserAgent(t *testing.T) {
-	ci := NewClientIdentity("my-app", "2.0.0")
-	if ci.UserAgent() != "my-app/2.0.0" {
-		t.Errorf("unexpected user agent: %s", ci.UserAgent())
-	}
-}
-
 func TestNopSinkSatisfiesInterface(t *testing.T) {
 	var sink TelemetrySink = NopTelemetrySink{}
 	sink.Record(TelemetryEvent{Type: EventTypeAnalytics})

@@ -19,26 +19,34 @@ func TestDefaultUserAgent_HonestClawIdentity(t *testing.T) {
 	}
 }
 
-func TestResolveUserAgent_Precedence(t *testing.T) {
+func TestResolveIdentity_UserAgentPrecedence(t *testing.T) {
+	t.Setenv(EnvCustomHeaders, "")
+	resolve := func(explicit, fallback string) string {
+		t.Helper()
+		id, err := ResolveIdentity(explicit, fallback, nil)
+		if err != nil {
+			t.Fatalf("ResolveIdentity error: %v", err)
+		}
+		return id.UserAgent
+	}
+
 	t.Setenv(EnvUserAgent, "")
-	if got := ResolveUserAgent(""); got != DefaultUserAgent() {
+	if got := resolve("", DefaultUserAgent()); got != DefaultUserAgent() {
 		t.Errorf("no override: got %q, want default %q", got, DefaultUserAgent())
+	}
+	if got := resolve("", "fallback/3.0"); got != "fallback/3.0" {
+		t.Errorf("custom fallback: got %q, want fallback/3.0", got)
 	}
 
 	t.Setenv(EnvUserAgent, "env-agent/1.0")
-	if got := ResolveUserAgent(""); got != "env-agent/1.0" {
+	if got := resolve("", DefaultUserAgent()); got != "env-agent/1.0" {
 		t.Errorf("env override: got %q, want env-agent/1.0", got)
 	}
-	if got := ResolveUserAgent("explicit-agent/2.0"); got != "explicit-agent/2.0" {
+	if got := resolve("explicit-agent/2.0", DefaultUserAgent()); got != "explicit-agent/2.0" {
 		t.Errorf("explicit override: got %q, want explicit-agent/2.0 (explicit wins over env)", got)
 	}
-
-	if got := ResolveUserAgentWithDefault("", "fallback/3.0"); got != "env-agent/1.0" {
+	if got := resolve("", "fallback/3.0"); got != "env-agent/1.0" {
 		t.Errorf("env beats custom fallback: got %q", got)
-	}
-	t.Setenv(EnvUserAgent, "")
-	if got := ResolveUserAgentWithDefault("", "fallback/3.0"); got != "fallback/3.0" {
-		t.Errorf("custom fallback: got %q, want fallback/3.0", got)
 	}
 }
 
@@ -66,21 +74,22 @@ func TestParseCustomHeaders(t *testing.T) {
 	}
 }
 
-func TestResolveExtraHeaders_ExplicitWinsOverEnv(t *testing.T) {
+func TestResolveIdentity_ExtraHeadersExplicitWinsOverEnv(t *testing.T) {
+	t.Setenv(EnvUserAgent, "")
 	t.Setenv(EnvCustomHeaders, "X-From-Env: env\nX-Shared: env")
-	merged, err := ResolveExtraHeaders(map[string]string{"X-Shared": "explicit", "X-From-Cfg": "cfg"})
+	id, err := ResolveIdentity("", DefaultUserAgent(), map[string]string{"X-Shared": "explicit", "X-From-Cfg": "cfg"})
 	if err != nil {
-		t.Fatalf("ResolveExtraHeaders error: %v", err)
+		t.Fatalf("ResolveIdentity error: %v", err)
 	}
 	want := map[string]string{"X-From-Env": "env", "X-Shared": "explicit", "X-From-Cfg": "cfg"}
 	for k, v := range want {
-		if merged[k] != v {
-			t.Errorf("merged[%q] = %q, want %q", k, merged[k], v)
+		if id.ExtraHeaders[k] != v {
+			t.Errorf("ExtraHeaders[%q] = %q, want %q", k, id.ExtraHeaders[k], v)
 		}
 	}
 
 	t.Setenv(EnvCustomHeaders, "malformed-line-without-colon")
-	if _, err := ResolveExtraHeaders(nil); err == nil {
+	if _, err := ResolveIdentity("", DefaultUserAgent(), nil); err == nil {
 		t.Error("malformed env: expected explicit error, got nil")
 	}
 }
