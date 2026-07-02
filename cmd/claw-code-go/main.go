@@ -85,6 +85,9 @@ func main() {
 	baseCommitFlag := flag.String("base-commit", "", "Base commit for diff context")
 	reasoningEffortFlag := flag.String("reasoning-effort", "", "Reasoning effort level (low, medium, high, xhigh, max; xhigh/max are model-dependent)")
 	outputFormatFlag := flag.String("output-format", "", "Output format: text (default), json, stream-json")
+	minimalPromptFlag := flag.Bool("minimal-prompt", false, "Disable all automatic system-prompt sections (context, memory, posture, MCP list) — small-model mode")
+	promptSectionsFlag := flag.String("prompt-sections", "", "Comma-separated prompt sections to enable EXCLUSIVELY (implies --minimal-prompt). Sections: "+strings.Join(runtime.PromptSectionNames(), ", "))
+	disablePromptSectionsFlag := flag.String("disable-prompt-sections", "", "Comma-separated prompt sections to disable (others keep their defaults)")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: claw-code-go [subcommand] [options]\n\n")
@@ -159,6 +162,16 @@ func main() {
 	// --dangerously-skip-permissions overrides permission mode to full access.
 	if *dangerouslySkipPerms {
 		cfg.PermissionMode = "danger-full-access"
+	}
+
+	// Prompt-section overrides (highest precedence, after settings + frontmatter).
+	if *minimalPromptFlag || *promptSectionsFlag != "" || *disablePromptSectionsFlag != "" {
+		only := splitCommaList(*promptSectionsFlag)
+		disable := splitCommaList(*disablePromptSectionsFlag)
+		if err := runtime.ApplyPromptSectionOverrides(cfg, *minimalPromptFlag, only, disable); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// --allowed-tools filters the tool registry.
@@ -276,6 +289,20 @@ func main() {
 
 	// Interactive TUI mode.
 	runTUI(cfg, loop)
+}
+
+// splitCommaList splits a comma-separated flag value into trimmed non-empty items.
+func splitCommaList(value string) []string {
+	if value == "" {
+		return nil
+	}
+	var items []string
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 // bootstrap initializes the runtime subsystems in the correct order:

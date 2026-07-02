@@ -15,6 +15,29 @@ type RuntimeFeatureConfig struct {
 	ProviderFallbacks ProviderFallbackConfig
 	TrustedRoots      []string
 	Sandbox           RuntimeSandboxConfig
+	Prompt            RuntimePromptConfig
+}
+
+// RuntimePromptConfig holds the system-prompt section toggles from the
+// settings "prompt" block. All booleans are tri-state: nil means "use the
+// default" (on, unless Minimal is set). Tri-state pointers are required
+// because settings merging is non-zero-wins — a plain bool could never
+// carry an explicit false across layers.
+type RuntimePromptConfig struct {
+	// Minimal flips the default of every section to off. Explicit
+	// per-section values always win over Minimal.
+	Minimal             *bool `json:"minimal,omitempty"`
+	Environment         *bool `json:"environment,omitempty"`
+	GitStatus           *bool `json:"gitStatus,omitempty"`
+	ProjectInstructions *bool `json:"projectInstructions,omitempty"`
+	McpTools            *bool `json:"mcpTools,omitempty"`
+	CompactionSummary   *bool `json:"compactionSummary,omitempty"`
+	MemoryWalkUp        *bool `json:"memoryWalkUp,omitempty"`
+	MemoryImports       *bool `json:"memoryImports,omitempty"`
+	AutoMemory          *bool `json:"autoMemory,omitempty"`
+	Posture             *bool `json:"posture,omitempty"`
+	// MemoryMaxBytes caps the combined injected memory content (0 = default).
+	MemoryMaxBytes int `json:"memoryMaxBytes,omitempty"`
 }
 
 // RuntimeSandboxConfig holds sandbox-related settings extracted from config.
@@ -197,6 +220,11 @@ func ExtractFeatureConfig(data []byte) RuntimeFeatureConfig {
 	// Trusted roots
 	if v, ok := raw["trustedRoots"]; ok {
 		json.Unmarshal(v, &cfg.TrustedRoots)
+	}
+
+	// Prompt section toggles (struct tags match the settings keys exactly).
+	if v, ok := raw["prompt"]; ok {
+		_ = json.Unmarshal(v, &cfg.Prompt)
 	}
 
 	// Sandbox

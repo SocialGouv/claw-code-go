@@ -9,9 +9,29 @@ import (
 	"github.com/SocialGouv/claw-code-go/internal/config"
 )
 
+// AssembleOptions selects which context sections Assemble emits. The zero
+// value disables everything — construct via DefaultAssembleOptions (all on)
+// and flip sections off, or use NewAssembler which defaults to all-on.
+type AssembleOptions struct {
+	Environment         bool
+	GitStatus           bool
+	ProjectInstructions bool
+}
+
+// DefaultAssembleOptions returns the all-on default (Claude Code parity).
+func DefaultAssembleOptions() AssembleOptions {
+	return AssembleOptions{
+		Environment:         true,
+		GitStatus:           true,
+		ProjectInstructions: true,
+	}
+}
+
 // Assembler collects and caches project context for injection into the system prompt.
 type Assembler struct {
 	WorkDir string
+
+	opts AssembleOptions
 
 	mu          sync.Mutex
 	memCache    string
@@ -19,9 +39,16 @@ type Assembler struct {
 	frontmatter *config.FrontmatterConfig
 }
 
-// NewAssembler creates an Assembler for the given working directory.
+// NewAssembler creates an Assembler for the given working directory with all
+// context sections enabled.
 func NewAssembler(workDir string) *Assembler {
-	return &Assembler{WorkDir: workDir}
+	return NewAssemblerWithOptions(workDir, DefaultAssembleOptions())
+}
+
+// NewAssemblerWithOptions creates an Assembler emitting only the sections
+// enabled in opts.
+func NewAssemblerWithOptions(workDir string, opts AssembleOptions) *Assembler {
+	return &Assembler{WorkDir: workDir, opts: opts}
 }
 
 // Assemble returns a formatted context block combining environment info, git status,
@@ -29,16 +56,22 @@ func NewAssembler(workDir string) *Assembler {
 func (a *Assembler) Assemble() string {
 	var sections []string
 
-	if info := SystemInfo(a.WorkDir); info != "" {
-		sections = append(sections, "# Environment\n\n"+info)
+	if a.opts.Environment {
+		if info := SystemInfo(a.WorkDir); info != "" {
+			sections = append(sections, "# Environment\n\n"+info)
+		}
 	}
 
-	if git := GitStatus(a.WorkDir); git != "" {
-		sections = append(sections, "# Git Status\n\n"+git)
+	if a.opts.GitStatus {
+		if git := GitStatus(a.WorkDir); git != "" {
+			sections = append(sections, "# Git Status\n\n"+git)
+		}
 	}
 
-	if mem := a.loadMemory(); mem != "" {
-		sections = append(sections, "# Project Instructions (CLAUDE.md)\n\n"+mem)
+	if a.opts.ProjectInstructions {
+		if mem := a.loadMemory(); mem != "" {
+			sections = append(sections, "# Project Instructions (CLAUDE.md)\n\n"+mem)
+		}
 	}
 
 	if len(sections) == 0 {
@@ -76,7 +109,7 @@ func (a *Assembler) LoadFrontmatter() *config.FrontmatterConfig {
 	if err != nil {
 		return nil
 	}
-	if fm.Model != nil || fm.PermissionMode != nil || len(fm.AllowedTools) > 0 {
+	if fm.HasOverrides() {
 		a.frontmatter = &fm
 	}
 	return a.frontmatter

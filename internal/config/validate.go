@@ -96,6 +96,7 @@ var topLevelFields = []fieldSpec{
 	{"enabledPlugins", "object"},
 	{"plugins", "object"},
 	{"sandbox", "object"},
+	{"prompt", "object"},
 	{"env", "object"},
 	{"aliases", "object"},
 	{"providerFallbacks", "object"},
@@ -134,6 +135,20 @@ var sandboxFields = []fieldSpec{
 	{"networkIsolation", "boolean"},
 	{"filesystemMode", "string"},
 	{"allowedMounts", "array"},
+}
+
+var promptFields = []fieldSpec{
+	{"minimal", "boolean"},
+	{"environment", "boolean"},
+	{"gitStatus", "boolean"},
+	{"projectInstructions", "boolean"},
+	{"mcpTools", "boolean"},
+	{"compactionSummary", "boolean"},
+	{"memoryWalkUp", "boolean"},
+	{"memoryImports", "boolean"},
+	{"autoMemory", "boolean"},
+	{"posture", "boolean"},
+	{"memoryMaxBytes", "number"},
 }
 
 var oauthFields = []fieldSpec{
@@ -242,6 +257,35 @@ func ValidateSettingsJSON(data []byte, filePath string) ValidationResult {
 				Field: "sandbox",
 				Line:  findKeyLine(data, "sandbox"),
 				Kind:  WrongTypeDiag{Expected: "object", Got: jsonTypeName(sandboxRaw)},
+			})
+		}
+	}
+
+	if promptRaw, ok := raw["prompt"]; ok {
+		var prompt map[string]json.RawMessage
+		if json.Unmarshal(promptRaw, &prompt) == nil {
+			validateObjectKeys(prompt, promptFields, "prompt.", filePath, data, &result)
+			for _, spec := range promptFields {
+				val, ok2 := prompt[spec.name]
+				if !ok2 {
+					continue
+				}
+				gotType := jsonTypeName(val)
+				if gotType != spec.jsonType && gotType != "null" {
+					result.Errors = append(result.Errors, ConfigDiagnostic{
+						Path:  filePath,
+						Field: "prompt." + spec.name,
+						Line:  findKeyLine(data, spec.name),
+						Kind:  WrongTypeDiag{Expected: spec.jsonType, Got: gotType},
+					})
+				}
+			}
+		} else {
+			result.Errors = append(result.Errors, ConfigDiagnostic{
+				Path:  filePath,
+				Field: "prompt",
+				Line:  findKeyLine(data, "prompt"),
+				Kind:  WrongTypeDiag{Expected: "object", Got: jsonTypeName(promptRaw)},
 			})
 		}
 	}

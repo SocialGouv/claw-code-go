@@ -170,15 +170,40 @@ func RunBootstrapPlan(args []string) {
 	}
 }
 
+// splitCommaFlag splits a comma-separated flag value into trimmed non-empty items.
+func splitCommaFlag(value string) []string {
+	if value == "" {
+		return nil
+	}
+	var items []string
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
 // RunPrintSystemPrompt implements the print-system-prompt subcommand.
 // It renders the full system prompt that would be sent to the model.
 func RunPrintSystemPrompt(args []string) {
 	fs := flag.NewFlagSet("print-system-prompt", flag.ExitOnError)
 	cwdFlag := fs.String("cwd", "", "Working directory to inject as context")
 	dateFlag := fs.String("date", "", "Date to inject as context (e.g. 2024-01-15)")
+	minimalPromptFlag := fs.Bool("minimal-prompt", false, "Disable all automatic system-prompt sections")
+	promptSectionsFlag := fs.String("prompt-sections", "", "Comma-separated prompt sections to enable exclusively (implies --minimal-prompt)")
+	disablePromptSectionsFlag := fs.String("disable-prompt-sections", "", "Comma-separated prompt sections to disable")
 	_ = fs.Parse(args)
 
 	cfg := runtime.LoadConfig()
+	if *minimalPromptFlag || *promptSectionsFlag != "" || *disablePromptSectionsFlag != "" {
+		err := runtime.ApplyPromptSectionOverrides(cfg, *minimalPromptFlag,
+			splitCommaFlag(*promptSectionsFlag), splitCommaFlag(*disablePromptSectionsFlag))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	}
 	loop := runtime.NewConversationLoop(cfg, runtime.NewNoAuthClient())
 	prompt := loop.SystemPrompt()
 
