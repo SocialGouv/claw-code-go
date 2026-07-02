@@ -186,6 +186,7 @@ func assembleOptionsFor(cfg *Config) clawctx.AssembleOptions {
 		Environment:         p.Environment,
 		GitStatus:           p.GitStatus,
 		ProjectInstructions: p.ProjectInstructions,
+		AutoMemory:          p.AutoMemory,
 		Memory: clawctx.MemoryOptions{
 			WalkUp:   p.MemoryWalkUp,
 			Imports:  p.MemoryImports,

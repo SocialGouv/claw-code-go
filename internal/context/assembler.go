@@ -16,6 +16,9 @@ type AssembleOptions struct {
 	Environment         bool
 	GitStatus           bool
 	ProjectInstructions bool
+	// AutoMemory injects the persistent MEMORY.md section (path +
+	// maintenance instructions + current content).
+	AutoMemory bool
 	// Memory configures CLAUDE.md discovery (walk-up, imports, size cap)
 	// when ProjectInstructions is enabled.
 	Memory MemoryOptions
@@ -27,6 +30,7 @@ func DefaultAssembleOptions() AssembleOptions {
 		Environment:         true,
 		GitStatus:           true,
 		ProjectInstructions: true,
+		AutoMemory:          true,
 		Memory:              DefaultMemoryOptions(),
 	}
 }
@@ -76,6 +80,12 @@ func (a *Assembler) Assemble() string {
 	if a.opts.ProjectInstructions {
 		if mem := a.loadMemory(); mem != "" {
 			sections = append(sections, "# Project Instructions (CLAUDE.md)\n\n"+mem)
+		}
+	}
+
+	if a.opts.AutoMemory {
+		if auto := LoadAutoMemorySection(a.WorkDir); auto != "" {
+			sections = append(sections, "# Auto memory\n\n"+auto)
 		}
 	}
 
