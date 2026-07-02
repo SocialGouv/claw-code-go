@@ -1,0 +1,7 @@
+
+# build artifacts
+/claw-code-go
+
+# local vendoring (module is consumed via go.sum; a stray vendor/ silently
+# flips go to -mod=vendor)
+/vendor/
