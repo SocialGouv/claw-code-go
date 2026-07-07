@@ -128,6 +128,7 @@ func NewConversationLoop(cfg *Config, client api.APIClient) *ConversationLoop {
 			tools.WriteFileTool(),
 			tools.GlobTool(),
 			tools.GrepTool(),
+			tools.SemanticSearchTool(),
 			tools.FileEditTool(),
 			tools.WebFetchTool(),
 			tools.WebSearchTool(),
@@ -974,6 +975,8 @@ func (loop *ConversationLoop) ExecuteToolQuiet(ctx context.Context, name string,
 		result, err = tools.ExecuteGlob(input)
 	case "grep":
 		result, err = tools.ExecuteGrep(input)
+	case "semantic_search":
+		result, err = tools.ExecuteSemanticSearch(input, loop.workspaceRoot())
 	case "file_edit":
 		result, err = tools.ExecuteFileEdit(input)
 	case "web_fetch":
@@ -1335,6 +1338,8 @@ func (loop *ConversationLoop) ExecuteTool(ctx context.Context, name string, inpu
 		result, err = tools.ExecuteGlob(input)
 	case "grep":
 		result, err = tools.ExecuteGrep(input)
+	case "semantic_search":
+		result, err = tools.ExecuteSemanticSearch(input, loop.workspaceRoot())
 	case "file_edit":
 		result, err = tools.ExecuteFileEdit(input)
 	case "web_fetch":

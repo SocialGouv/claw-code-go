@@ -112,6 +112,7 @@ func AllowedToolsForSubagent(subagentType string) map[string]bool {
 		"read_file":         true,
 		"glob":              true,
 		"grep":              true,
+		"semantic_search":   true,
 		"web_fetch":         true,
 		"web_search":        true,
 		"tool_search":       true,
