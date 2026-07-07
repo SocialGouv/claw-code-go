@@ -17,7 +17,7 @@ func TestModelTokenLimitsKnownModels(t *testing.T) {
 		{"claude-opus-4-7", 128_000, 1_000_000},
 		{"claude-opus-4-6", 128_000, 1_000_000},
 		{"claude-sonnet-4-7", 128_000, 1_000_000},
-		{"claude-sonnet-4-6", 64_000, 1_000_000},
+		{"claude-sonnet-4-6", 128_000, 1_000_000},
 		{"claude-haiku-4-5", 64_000, 200_000},
 		{"claude-haiku-4-5-20251213", 64_000, 200_000},
 		{"gpt-5.5", 128_000, 1_050_000},

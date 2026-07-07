@@ -205,7 +205,7 @@ func TestMaxTokensForModel(t *testing.T) {
 		{"claude-opus-4-7", 128_000},
 		{"claude-opus-4-6", 128_000},
 		{"claude-sonnet-4-7", 128_000},
-		{"claude-sonnet-4-6", 64_000},
+		{"claude-sonnet-4-6", 128_000},
 		{"claude-haiku-4-5-20251213", 64_000},
 		{"grok-3", 64_000},
 		{"grok-3-mini", 64_000},
@@ -431,7 +431,7 @@ func TestLookupModelTokenLimit(t *testing.T) {
 		{"claude-opus-4-7", false, 128_000, 1_000_000},
 		{"claude-opus-4-6", false, 128_000, 1_000_000},
 		{"claude-sonnet-4-7", false, 128_000, 1_000_000},
-		{"claude-sonnet-4-6", false, 64_000, 1_000_000},
+		{"claude-sonnet-4-6", false, 128_000, 1_000_000},
 		{"claude-haiku-4-5", false, 64_000, 200_000},
 		{"claude-haiku-4-5-20251213", false, 64_000, 200_000}, // alias
 		{"gpt-5.5", false, 128_000, 1_050_000},
