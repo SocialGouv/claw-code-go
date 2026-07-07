@@ -25,7 +25,7 @@ import (
 	"sync/atomic"
 )
 
-const systemPromptBase = `You are Claude Code, an AI assistant for software engineering tasks. You have access to tools for running bash commands, reading and writing files, searching with glob patterns, and grepping for patterns in code. Use these tools to help users with coding tasks.`
+const systemPromptBase = `You are Claude Code, an interactive agent for software engineering tasks. Use the available tools to investigate the user's codebase and question, make precise changes, and verify the result.`
 
 // ConversationLoop manages the agentic conversation loop with tool use.
 type ConversationLoop struct {
@@ -223,9 +223,26 @@ func (loop *ConversationLoop) systemPrompt() string {
 	parts = append(parts, systemPromptBase)
 
 	// Inject the authored operating-posture section (gated: it is the
-	// heaviest fixed section for small models).
+	// heaviest fixed section for small models), then the behavioral parity
+	// sections it summarizes. The posture stays self-contained so it can run
+	// alone; the sections deepen each area and are individually toggleable.
 	if p.Posture {
 		parts = append(parts, clawctx.OperatingPosture)
+	}
+	if p.Communication {
+		parts = append(parts, clawctx.CommunicationSection)
+	}
+	if p.TaskManagement {
+		parts = append(parts, clawctx.TaskManagementSection)
+	}
+	if p.DoingTasks {
+		parts = append(parts, clawctx.DoingTasksSection)
+	}
+	if p.ToolPolicy {
+		parts = append(parts, clawctx.ToolPolicySection)
+	}
+	if p.GitSafety {
+		parts = append(parts, clawctx.GitSafetySection)
 	}
 
 	// Inject project context (Phase 12): environment, git status, CLAUDE.md.
@@ -233,6 +250,12 @@ func (loop *ConversationLoop) systemPrompt() string {
 		if ctx := loop.CtxAssembler.Assemble(); ctx != "" {
 			parts = append(parts, ctx)
 		}
+	}
+
+	// Context-management guidance sits after the project context, next to the
+	// compaction summary it explains.
+	if p.ContextManagement {
+		parts = append(parts, clawctx.ContextManagementSection)
 	}
 
 	// Inject compaction summary when the session has one (Phase 6).

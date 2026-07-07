@@ -111,7 +111,18 @@ func TestSystemPromptSectionGating(t *testing.T) {
 		}
 	}
 
-	// Defaults (nil prompt config): posture + compaction summary present.
+	behavioralHeaders := []string{
+		"# Operating posture",
+		"# Communicating with the user",
+		"# Task management",
+		"# Doing tasks",
+		"# Tool usage policy",
+		"# Git safety",
+		"# Context management",
+	}
+
+	// Defaults (nil prompt config): every behavioral section + compaction
+	// summary present, in declaration order after the base sentence.
 	got := newLoop(nil).systemPrompt()
 	if !strings.Contains(got, summary) {
 		t.Errorf("default prompt config: compaction summary missing:\n%s", got)
@@ -119,21 +130,41 @@ func TestSystemPromptSectionGating(t *testing.T) {
 	if !strings.HasPrefix(got, systemPromptBase) {
 		t.Errorf("system prompt must start with the base sentence")
 	}
-	if !strings.Contains(got, "# Operating posture") {
-		t.Errorf("default prompt config: posture missing:\n%s", got)
-	}
-	if strings.Index(got, "# Operating posture") < len(systemPromptBase) {
-		t.Errorf("posture must come after the base sentence")
+	prev := len(systemPromptBase)
+	for _, header := range behavioralHeaders {
+		idx := strings.Index(got, header)
+		if idx < 0 {
+			t.Errorf("default prompt config: %s missing:\n%s", header, got)
+			continue
+		}
+		if idx < prev {
+			t.Errorf("%s out of order (index %d < %d)", header, idx, prev)
+		}
+		prev = idx
 	}
 
-	// Minimal: posture + compaction summary gated off.
+	// Single-section isolation: disabling one behavioral section removes
+	// exactly that section.
+	solo := DefaultPromptConfig()
+	solo.GitSafety = false
+	got = newLoop(&solo).systemPrompt()
+	if strings.Contains(got, "# Git safety") {
+		t.Errorf("git-safety disabled but still rendered:\n%s", got)
+	}
+	if !strings.Contains(got, "# Task management") {
+		t.Errorf("disabling git-safety must not drop other sections:\n%s", got)
+	}
+
+	// Minimal: every behavioral section + compaction summary gated off.
 	minimal := MinimalPromptConfig()
 	got = newLoop(&minimal).systemPrompt()
 	if strings.Contains(got, summary) {
 		t.Errorf("minimal prompt config: compaction summary leaked:\n%s", got)
 	}
-	if strings.Contains(got, "# Operating posture") {
-		t.Errorf("minimal prompt config: posture leaked:\n%s", got)
+	for _, header := range behavioralHeaders {
+		if strings.Contains(got, header) {
+			t.Errorf("minimal prompt config: %s leaked:\n%s", header, got)
+		}
 	}
 	if got != systemPromptBase {
 		t.Errorf("minimal + no assembler: want bare base sentence, got:\n%s", got)

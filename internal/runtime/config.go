@@ -114,6 +114,12 @@ type PromptConfig struct {
 	MemoryImports       bool
 	AutoMemory          bool
 	Posture             bool
+	Communication       bool
+	TaskManagement      bool
+	DoingTasks          bool
+	ToolPolicy          bool
+	GitSafety           bool
+	ContextManagement   bool
 	// MemoryMaxBytes caps the combined injected memory content (0 = default).
 	MemoryMaxBytes int
 }
@@ -130,6 +136,12 @@ func DefaultPromptConfig() PromptConfig {
 		MemoryImports:       true,
 		AutoMemory:          true,
 		Posture:             true,
+		Communication:       true,
+		TaskManagement:      true,
+		DoingTasks:          true,
+		ToolPolicy:          true,
+		GitSafety:           true,
+		ContextManagement:   true,
 	}
 }
 
@@ -179,6 +191,12 @@ func ResolvePromptConfig(p *config.RuntimePromptConfig) PromptConfig {
 		MemoryImports:       pick(p.MemoryImports),
 		AutoMemory:          pick(p.AutoMemory),
 		Posture:             pick(p.Posture),
+		Communication:       pick(p.Communication),
+		TaskManagement:      pick(p.TaskManagement),
+		DoingTasks:          pick(p.DoingTasks),
+		ToolPolicy:          pick(p.ToolPolicy),
+		GitSafety:           pick(p.GitSafety),
+		ContextManagement:   pick(p.ContextManagement),
 		MemoryMaxBytes:      p.MemoryMaxBytes,
 	}
 }
@@ -199,6 +217,12 @@ var promptSections = []struct {
 	{"memory-imports", func(p *PromptConfig) *bool { return &p.MemoryImports }},
 	{"auto-memory", func(p *PromptConfig) *bool { return &p.AutoMemory }},
 	{"posture", func(p *PromptConfig) *bool { return &p.Posture }},
+	{"communication", func(p *PromptConfig) *bool { return &p.Communication }},
+	{"task-management", func(p *PromptConfig) *bool { return &p.TaskManagement }},
+	{"doing-tasks", func(p *PromptConfig) *bool { return &p.DoingTasks }},
+	{"tool-policy", func(p *PromptConfig) *bool { return &p.ToolPolicy }},
+	{"git-safety", func(p *PromptConfig) *bool { return &p.GitSafety }},
+	{"context-management", func(p *PromptConfig) *bool { return &p.ContextManagement }},
 }
 
 func normalizePromptSection(name string) string {
