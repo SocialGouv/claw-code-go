@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -65,8 +66,16 @@ type ConversationLoop struct {
 	PlanModeActive bool
 
 	// pendingReminders queues <system-reminder> payloads for injection at
-	// the next turn boundary (see reminders.go).
+	// the next turn boundary (see reminders.go). remindersMu guards it:
+	// background subagent completions queue from their own goroutines.
+	remindersMu      sync.Mutex
 	pendingReminders []string
+
+	// subagentDefs holds session-scoped subagent types registered via the
+	// define_subagent tool (see subagent.go). Guarded by subagentMu —
+	// background spawns read it concurrently.
+	subagentMu   sync.Mutex
+	subagentDefs map[string]SubagentDef
 
 	// SkillState tracks the currently active skill (if any) so that
 	// allowed-tools restrictions can be enforced at tool dispatch time.
@@ -152,6 +161,7 @@ func NewConversationLoop(cfg *Config, client api.APIClient) *ConversationLoop {
 			tools.RemoteTriggerTool(),
 			// Batch 2: orchestration tools
 			tools.AgentTool(),
+			tools.DefineSubagentTool(),
 			tools.SkillTool(),
 			tools.ToolSearchTool(),
 			// Batch 3: worker tools
@@ -1034,7 +1044,9 @@ func (loop *ConversationLoop) ExecuteToolQuiet(ctx context.Context, name string,
 		result, err = tools.ExecuteRemoteTrigger(ctx, input)
 	// --- Batch 2: orchestration tools ---
 	case "agent":
-		result, err = tools.ExecuteAgent(input)
+		result, err = loop.executeAgentSpawn(input)
+	case "define_subagent":
+		result, err = loop.executeDefineSubagent(input)
 	case "skill":
 		var inv *tools.SkillInvocation
 		result, inv, err = tools.ExecuteSkillEx(input, loop.workspaceRoot(), false)
@@ -1419,7 +1431,9 @@ func (loop *ConversationLoop) ExecuteTool(ctx context.Context, name string, inpu
 		result, err = tools.ExecuteRemoteTrigger(ctx, input)
 	// --- Batch 2: orchestration tools ---
 	case "agent":
-		result, err = tools.ExecuteAgent(input)
+		result, err = loop.executeAgentSpawn(input)
+	case "define_subagent":
+		result, err = loop.executeDefineSubagent(input)
 	case "skill":
 		var inv *tools.SkillInvocation
 		result, inv, err = tools.ExecuteSkillEx(input, loop.workspaceRoot(), false)
