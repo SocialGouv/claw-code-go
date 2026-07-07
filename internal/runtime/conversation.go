@@ -64,6 +64,10 @@ type ConversationLoop struct {
 	// PlanModeActive tracks whether plan mode is currently engaged.
 	PlanModeActive bool
 
+	// pendingReminders queues <system-reminder> payloads for injection at
+	// the next turn boundary (see reminders.go).
+	pendingReminders []string
+
 	// SkillState tracks the currently active skill (if any) so that
 	// allowed-tools restrictions can be enforced at tool dispatch time.
 	SkillState SkillStateLock
@@ -405,6 +409,7 @@ func (loop *ConversationLoop) SendMessage(ctx context.Context, userText string) 
 	if ShouldCompact(loop.Compaction.LastInputTokens, loop.Session.Messages, loop.Config) {
 		if loop.tryCompact(ctx) {
 			loop.Compaction.CompactionCount++
+			loop.QueueSystemReminder(reminderPostCompaction)
 		}
 	}
 
@@ -426,6 +431,10 @@ func (loop *ConversationLoop) SendMessage(ctx context.Context, userText string) 
 // runOneTurn sends the current session messages to the API and processes the response.
 // Returns the stop_reason.
 func (loop *ConversationLoop) runOneTurn(ctx context.Context) (string, error) {
+	// Turn boundary: deliver any reminders queued by the previous turn's
+	// tools or by compaction before the request is built.
+	loop.flushSystemReminders()
+
 	req := api.CreateMessageRequest{
 		Model:           loop.Config.Model,
 		MaxTokens:       loop.Config.MaxTokens,
@@ -606,6 +615,7 @@ func (loop *ConversationLoop) SendMessageStreaming(ctx context.Context, userText
 	if ShouldCompact(loop.Compaction.LastInputTokens, loop.Session.Messages, loop.Config) {
 		if loop.tryCompact(ctx) {
 			loop.Compaction.CompactionCount++
+			loop.QueueSystemReminder(reminderPostCompaction)
 		}
 	}
 
@@ -649,6 +659,10 @@ func (loop *ConversationLoop) SendMessageStreaming(ctx context.Context, userText
 // runOneTurnStreaming streams one API turn and sends TurnEvents.
 // Returns stop_reason, inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens, error.
 func (loop *ConversationLoop) runOneTurnStreaming(ctx context.Context, events chan<- TurnEvent) (string, int, int, int, int, error) {
+	// Turn boundary: deliver any reminders queued by the previous turn's
+	// tools or by compaction before the request is built.
+	loop.flushSystemReminders()
+
 	req := api.CreateMessageRequest{
 		Model:           loop.Config.Model,
 		MaxTokens:       loop.Config.MaxTokens,
@@ -960,8 +974,10 @@ func (loop *ConversationLoop) ExecuteToolQuiet(ctx context.Context, name string,
 		result, err = tools.ExecuteStructuredOutput(input)
 	case "enter_plan_mode":
 		result, err = tools.ExecuteEnterPlanMode(&loop.PlanModeActive, loop.planModeStateDir())
+		loop.queuePlanModeReminder(true, err)
 	case "exit_plan_mode":
 		result, err = tools.ExecuteExitPlanMode(&loop.PlanModeActive, loop.planModeStateDir())
+		loop.queuePlanModeReminder(false, err)
 	case "send_user_message":
 		result, err = tools.ExecuteSendUserMessage(input)
 	// --- Batch 2: task tools ---
@@ -1335,8 +1351,10 @@ func (loop *ConversationLoop) ExecuteTool(ctx context.Context, name string, inpu
 		result, err = tools.ExecuteStructuredOutput(input)
 	case "enter_plan_mode":
 		result, err = tools.ExecuteEnterPlanMode(&loop.PlanModeActive, loop.planModeStateDir())
+		loop.queuePlanModeReminder(true, err)
 	case "exit_plan_mode":
 		result, err = tools.ExecuteExitPlanMode(&loop.PlanModeActive, loop.planModeStateDir())
+		loop.queuePlanModeReminder(false, err)
 	case "send_user_message":
 		result, err = tools.ExecuteSendUserMessage(input)
 	// --- Batch 2: task tools ---
