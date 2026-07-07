@@ -51,9 +51,9 @@ func sha256Hex(b []byte) string {
 
 func TestInstaller_DownloadVerifyExtract(t *testing.T) {
 	tarball := makeTarGz(t, map[string]string{
-		"manifest.json":    `{"name":"linter"}`,
-		"bin/run.sh":       "#!/bin/sh\necho hi\n",
-		"docs/readme.md":   "doc",
+		"manifest.json":  `{"name":"linter"}`,
+		"bin/run.sh":     "#!/bin/sh\necho hi\n",
+		"docs/readme.md": "doc",
 	})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(tarball)

@@ -187,8 +187,8 @@ func TestFetchManifestNotFound(t *testing.T) {
 
 func TestInstallExtractsTarballAndVerifiesSHA(t *testing.T) {
 	tarball := makeTarGz(t, map[string]string{
-		"plugin.json":   `{"name":"linter","version":"1.0.0"}`,
-		"bin/run.sh":    "#!/bin/sh\necho hi\n",
+		"plugin.json":    `{"name":"linter","version":"1.0.0"}`,
+		"bin/run.sh":     "#!/bin/sh\necho hi\n",
 		"docs/readme.md": "doc",
 	})
 	srv := newStubServer(t, sampleManifest(), tarball)

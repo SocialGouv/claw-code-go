@@ -155,11 +155,11 @@ func TestReadImage_PathAndURL_Mutex(t *testing.T) {
 // per binary. It also lets tests toggle a fake DISPLAY and decide which
 // binaries appear on PATH.
 type fakeRunner struct {
-	display    bool
-	available  map[string]bool
-	stdoutFor  map[string][]byte
-	errFor     map[string]error
-	calls      []fakeCall
+	display   bool
+	available map[string]bool
+	stdoutFor map[string][]byte
+	errFor    map[string]error
+	calls     []fakeCall
 }
 
 type fakeCall struct {
@@ -169,10 +169,10 @@ type fakeCall struct {
 
 func newFakeRunner() *fakeRunner {
 	return &fakeRunner{
-		display:    true,
-		available:  map[string]bool{"xdotool": true, "import": true},
-		stdoutFor:  map[string][]byte{},
-		errFor:     map[string]error{},
+		display:   true,
+		available: map[string]bool{"xdotool": true, "import": true},
+		stdoutFor: map[string][]byte{},
+		errFor:    map[string]error{},
 	}
 }
 

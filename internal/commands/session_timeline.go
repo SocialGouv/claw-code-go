@@ -24,13 +24,13 @@ type SessionDirProvider interface {
 // keeps the commands package's dependency graph shallow and makes the
 // renderer easy to unit-test.
 type timelineSession struct {
-	ID            string                  `json:"id"`
-	CreatedAt     time.Time               `json:"created_at"`
-	UpdatedAt     time.Time               `json:"updated_at"`
-	Messages      []timelineMessage       `json:"messages"`
-	PromptHistory []timelinePromptEntry   `json:"prompt_history,omitempty"`
-	Fork          *timelineFork           `json:"fork,omitempty"`
-	Compaction    int                     `json:"compaction_count,omitempty"`
+	ID            string                `json:"id"`
+	CreatedAt     time.Time             `json:"created_at"`
+	UpdatedAt     time.Time             `json:"updated_at"`
+	Messages      []timelineMessage     `json:"messages"`
+	PromptHistory []timelinePromptEntry `json:"prompt_history,omitempty"`
+	Fork          *timelineFork         `json:"fork,omitempty"`
+	Compaction    int                   `json:"compaction_count,omitempty"`
 }
 
 type timelineMessage struct {
