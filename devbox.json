@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/main/.schema/devbox.schema.json",
+  "packages": [
+    "go@1.26"
+  ],
+  "shell": {
+    "init_hook": [],
+    "scripts": {
+      "build": "go build ./cmd/claw-code-go",
+      "test": "go test ./...",
+      "check": "go vet ./... && go test ./..."
+    }
+  }
+}
