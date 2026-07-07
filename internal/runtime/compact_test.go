@@ -58,8 +58,13 @@ func TestFormatCompactSummaryExtractsSummaryTag(t *testing.T) {
 
 func TestGetContinuationMessageSuppressFollowUp(t *testing.T) {
 	msg := GetContinuationMessage("summary text", true, false)
-	if msg.Role != "system" {
-		t.Errorf("Role = %q, want 'system'", msg.Role)
+	// Wire-safe shape: injected user message, never role "system" (the
+	// Anthropic Messages API rejects system entries inside messages[]).
+	if msg.Role != "user" {
+		t.Errorf("Role = %q, want 'user'", msg.Role)
+	}
+	if !msg.IsInjected {
+		t.Error("continuation must be IsInjected so it stays out of the real-turn count")
 	}
 	text := msg.Content[0].Text
 	if !strings.Contains(text, "do not acknowledge the summary") {
@@ -330,8 +335,8 @@ func TestCompactSessionPureAboveThreshold(t *testing.T) {
 		t.Error("compacted messages should not be empty")
 	}
 	// Should have continuation message + preserved recent messages.
-	if result.CompactedMessages[0].Role != "system" {
-		t.Error("first compacted message should be system continuation")
+	if first := result.CompactedMessages[0]; first.Role != "user" || !first.IsInjected {
+		t.Errorf("first compacted message should be the injected user continuation, got role=%q injected=%v", first.Role, first.IsInjected)
 	}
 	if result.RemovedMessageCount <= 0 {
 		t.Error("should have removed some messages")
