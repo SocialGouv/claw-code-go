@@ -162,6 +162,7 @@ func NewConversationLoop(cfg *Config, client api.APIClient) *ConversationLoop {
 			// Batch 2: orchestration tools
 			tools.AgentTool(),
 			tools.DefineSubagentTool(),
+			tools.OracleTool(),
 			tools.SkillTool(),
 			tools.ToolSearchTool(),
 			// Batch 3: worker tools
@@ -1047,6 +1048,8 @@ func (loop *ConversationLoop) ExecuteToolQuiet(ctx context.Context, name string,
 		result, err = loop.executeAgentSpawn(input)
 	case "define_subagent":
 		result, err = loop.executeDefineSubagent(input)
+	case "oracle":
+		result, err = loop.executeOracle(ctx, input)
 	case "skill":
 		var inv *tools.SkillInvocation
 		result, inv, err = tools.ExecuteSkillEx(input, loop.workspaceRoot(), false)
@@ -1434,6 +1437,8 @@ func (loop *ConversationLoop) ExecuteTool(ctx context.Context, name string, inpu
 		result, err = loop.executeAgentSpawn(input)
 	case "define_subagent":
 		result, err = loop.executeDefineSubagent(input)
+	case "oracle":
+		result, err = loop.executeOracle(ctx, input)
 	case "skill":
 		var inv *tools.SkillInvocation
 		result, inv, err = tools.ExecuteSkillEx(input, loop.workspaceRoot(), false)
