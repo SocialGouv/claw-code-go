@@ -178,3 +178,34 @@ func TestSystemPromptSectionGating(t *testing.T) {
 		t.Errorf("nil Config: expected default gating, got:\n%s", got)
 	}
 }
+
+func TestSystemPromptCustomAndAppend(t *testing.T) {
+	newLoop := func(cfg *Config) *ConversationLoop {
+		return &ConversationLoop{Config: cfg, Session: NewSession()}
+	}
+
+	// SystemPrompt replaces identity + posture + behavioral sections.
+	got := newLoop(&Config{SystemPrompt: "You are TestBot."}).systemPrompt()
+	if !strings.HasPrefix(got, "You are TestBot.") {
+		t.Errorf("custom prompt must replace the base sentence:\n%s", got)
+	}
+	if strings.Contains(got, systemPromptBase) || strings.Contains(got, "# Operating posture") ||
+		strings.Contains(got, "# Task management") {
+		t.Errorf("custom prompt must suppress the authored base sections:\n%s", got)
+	}
+
+	// AppendSystemPrompt lands at the very end of the assembled prompt.
+	got = newLoop(&Config{AppendSystemPrompt: "Always answer in French."}).systemPrompt()
+	if !strings.HasSuffix(got, "Always answer in French.") {
+		t.Errorf("appended prompt must close the assembled prompt:\n%s", got)
+	}
+	if !strings.HasPrefix(got, systemPromptBase) {
+		t.Errorf("append must not replace the base:\n%s", got)
+	}
+
+	// Both combined: custom base + appended suffix.
+	got = newLoop(&Config{SystemPrompt: "Custom base.", AppendSystemPrompt: "Suffix."}).systemPrompt()
+	if !strings.HasPrefix(got, "Custom base.") || !strings.HasSuffix(got, "Suffix.") {
+		t.Errorf("custom+append composition wrong:\n%s", got)
+	}
+}

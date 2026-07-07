@@ -86,6 +86,8 @@ func main() {
 	baseCommitFlag := flag.String("base-commit", "", "Base commit for diff context")
 	reasoningEffortFlag := flag.String("reasoning-effort", "", "Reasoning effort level (low, medium, high, xhigh, max; xhigh/max are model-dependent)")
 	outputFormatFlag := flag.String("output-format", "", "Output format: text (default), json, stream-json")
+	systemPromptFlag := flag.String("system-prompt", "", "Replace the built-in base prompt (identity, posture, behavioral sections); context sections keep their toggles")
+	appendSystemPromptFlag := flag.String("append-system-prompt", "", "Append text at the end of the assembled system prompt")
 	minimalPromptFlag := flag.Bool("minimal-prompt", false, "Disable all automatic system-prompt sections (context, memory, posture, MCP list) — small-model mode")
 	promptSectionsFlag := flag.String("prompt-sections", "", "Comma-separated prompt sections to enable EXCLUSIVELY (implies --minimal-prompt). Sections: "+strings.Join(runtime.PromptSectionNames(), ", "))
 	disablePromptSectionsFlag := flag.String("disable-prompt-sections", "", "Comma-separated prompt sections to disable (others keep their defaults)")
@@ -163,6 +165,13 @@ func main() {
 	// --dangerously-skip-permissions overrides permission mode to full access.
 	if *dangerouslySkipPerms {
 		cfg.PermissionMode = "danger-full-access"
+	}
+
+	if *systemPromptFlag != "" {
+		cfg.SystemPrompt = *systemPromptFlag
+	}
+	if *appendSystemPromptFlag != "" {
+		cfg.AppendSystemPrompt = *appendSystemPromptFlag
 	}
 
 	// Prompt-section overrides (highest precedence, after settings + frontmatter).

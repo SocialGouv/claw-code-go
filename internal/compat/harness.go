@@ -180,6 +180,8 @@ func RunPrintSystemPrompt(args []string) {
 	minimalPromptFlag := fs.Bool("minimal-prompt", false, "Disable all automatic system-prompt sections")
 	promptSectionsFlag := fs.String("prompt-sections", "", "Comma-separated prompt sections to enable exclusively (implies --minimal-prompt)")
 	disablePromptSectionsFlag := fs.String("disable-prompt-sections", "", "Comma-separated prompt sections to disable")
+	systemPromptFlag := fs.String("system-prompt", "", "Replace the built-in base prompt (identity, posture, behavioral sections)")
+	appendSystemPromptFlag := fs.String("append-system-prompt", "", "Append text at the end of the assembled system prompt")
 	_ = fs.Parse(args)
 
 	// Chdir first so config layers, the CLAUDE.md walk-up, git status and the
@@ -200,6 +202,12 @@ func RunPrintSystemPrompt(args []string) {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
+	}
+	if *systemPromptFlag != "" {
+		cfg.SystemPrompt = *systemPromptFlag
+	}
+	if *appendSystemPromptFlag != "" {
+		cfg.AppendSystemPrompt = *appendSystemPromptFlag
 	}
 	loop := runtime.NewConversationLoop(cfg, runtime.NewNoAuthClient())
 	prompt := loop.SystemPrompt()

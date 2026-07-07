@@ -224,29 +224,35 @@ func (loop *ConversationLoop) systemPrompt() string {
 	p := loop.Config.PromptOrDefault()
 
 	var parts []string
-	parts = append(parts, systemPromptBase)
+	if custom := loop.Config.CustomSystemPrompt(); custom != "" {
+		// A host/user-supplied prompt replaces the authored base (identity,
+		// posture, behavioral sections); context sections keep their toggles.
+		parts = append(parts, custom)
+	} else {
+		parts = append(parts, systemPromptBase)
 
-	// Inject the authored operating-posture section (gated: it is the
-	// heaviest fixed section for small models), then the behavioral parity
-	// sections it summarizes. The posture stays self-contained so it can run
-	// alone; the sections deepen each area and are individually toggleable.
-	if p.Posture {
-		parts = append(parts, clawctx.OperatingPosture)
-	}
-	if p.Communication {
-		parts = append(parts, clawctx.CommunicationSection)
-	}
-	if p.TaskManagement {
-		parts = append(parts, clawctx.TaskManagementSection)
-	}
-	if p.DoingTasks {
-		parts = append(parts, clawctx.DoingTasksSection)
-	}
-	if p.ToolPolicy {
-		parts = append(parts, clawctx.ToolPolicySection)
-	}
-	if p.GitSafety {
-		parts = append(parts, clawctx.GitSafetySection)
+		// Inject the authored operating-posture section (gated: it is the
+		// heaviest fixed section for small models), then the behavioral parity
+		// sections it summarizes. The posture stays self-contained so it can run
+		// alone; the sections deepen each area and are individually toggleable.
+		if p.Posture {
+			parts = append(parts, clawctx.OperatingPosture)
+		}
+		if p.Communication {
+			parts = append(parts, clawctx.CommunicationSection)
+		}
+		if p.TaskManagement {
+			parts = append(parts, clawctx.TaskManagementSection)
+		}
+		if p.DoingTasks {
+			parts = append(parts, clawctx.DoingTasksSection)
+		}
+		if p.ToolPolicy {
+			parts = append(parts, clawctx.ToolPolicySection)
+		}
+		if p.GitSafety {
+			parts = append(parts, clawctx.GitSafetySection)
+		}
 	}
 
 	// Inject project context (Phase 12): environment, git status, CLAUDE.md.
@@ -277,6 +283,11 @@ func (loop *ConversationLoop) systemPrompt() string {
 			}
 			parts = append(parts, "Additional tools available via MCP: "+strings.Join(names, ", ")+".")
 		}
+	}
+
+	// Host/user-supplied suffix always closes the prompt.
+	if appended := loop.Config.AppendedSystemPrompt(); appended != "" {
+		parts = append(parts, appended)
 	}
 
 	return strings.Join(parts, "\n\n")

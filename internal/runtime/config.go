@@ -27,12 +27,19 @@ type MCPServerConfig struct {
 
 // Config holds runtime configuration for the CLI.
 type Config struct {
-	Model        string
-	MaxTokens    int
+	Model     string
+	MaxTokens int
+	// SystemPrompt, when set, REPLACES the authored base (identity sentence,
+	// posture and behavioral sections). Context sections (environment, git,
+	// CLAUDE.md, memory, compaction, MCP) still follow their toggles —
+	// combine with the minimal-prompt mode to send the custom prompt alone.
 	SystemPrompt string
-	SessionDir   string
-	APIKey       string
-	BaseURL      string
+	// AppendSystemPrompt is appended verbatim at the end of the assembled
+	// system prompt (the claude CLI's --append-system-prompt semantics).
+	AppendSystemPrompt string
+	SessionDir         string
+	APIKey             string
+	BaseURL            string
 
 	// Provider and auth fields (Phase 3).
 	// ProviderName is one of: "anthropic", "bedrock", "vertex", "foundry".
@@ -297,6 +304,22 @@ func (c *Config) PromptOrDefault() PromptConfig {
 		return *c.Prompt
 	}
 	return DefaultPromptConfig()
+}
+
+// CustomSystemPrompt returns the replacement base prompt, if any (nil-safe).
+func (c *Config) CustomSystemPrompt() string {
+	if c == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.SystemPrompt)
+}
+
+// AppendedSystemPrompt returns the appended prompt suffix, if any (nil-safe).
+func (c *Config) AppendedSystemPrompt() string {
+	if c == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.AppendSystemPrompt)
 }
 
 // LoadConfig reads configuration from layered settings files and environment
