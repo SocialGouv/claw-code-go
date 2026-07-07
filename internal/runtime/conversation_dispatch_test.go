@@ -103,15 +103,19 @@ func TestBatch3NilRegistries(t *testing.T) {
 		McpAuthState:   nil,
 	}
 
+	// The MCP resource/auth tools never hard-error on nil registries:
+	// mcpProvider() falls back to a default Provider so they answer with
+	// uniform "not found"/"disconnected" shapes instead (see mcpProvider).
 	nilTests := []struct {
-		name  string
-		input map[string]any
+		name      string
+		input     map[string]any
+		wantError bool
 	}{
-		{"worker_create", map[string]any{"cwd": "/tmp"}},
-		{"lsp", map[string]any{"action": "diagnostics"}},
-		{"list_mcp_resources", map[string]any{}},
-		{"read_mcp_resource", map[string]any{"uri": "test://x"}},
-		{"mcp_auth", map[string]any{"server": "test"}},
+		{"worker_create", map[string]any{"cwd": "/tmp"}, true},
+		{"lsp", map[string]any{"action": "diagnostics"}, true},
+		{"list_mcp_resources", map[string]any{}, false},
+		{"read_mcp_resource", map[string]any{"uri": "test://x"}, false},
+		{"mcp_auth", map[string]any{"server": "test"}, false},
 	}
 
 	for _, tt := range nilTests {
@@ -120,8 +124,8 @@ func TestBatch3NilRegistries(t *testing.T) {
 			if cb.Type != "tool_result" {
 				t.Errorf("expected tool_result type, got %q", cb.Type)
 			}
-			if !cb.IsError {
-				t.Errorf("expected error for nil registry on %s", tt.name)
+			if cb.IsError != tt.wantError {
+				t.Errorf("IsError = %v, want %v for %s (nil registry)", cb.IsError, tt.wantError, tt.name)
 			}
 		})
 	}
