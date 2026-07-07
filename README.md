@@ -127,8 +127,8 @@ Claude Code-parity memory ([`internal/context/`](internal/context/)) with every 
 
 - 📖 **CLAUDE.md discovery** — `~/.claude/CLAUDE.md`, ancestor directories (recursive walk-up), `<cwd>/CLAUDE.md`, `<cwd>/.claude/CLAUDE.md`; `@path` imports expand recursively (5 hops, cycle-safe, code fences skipped); 48KB combined cap.
 - 💾 **Auto memory** — per-workspace persistent `MEMORY.md` under `~/.claw-code/memory/<fingerprint>/` (override: `CLAW_MEMORY_DIR`), injected at session start with maintenance instructions; the model updates it with the standard file tools.
-- 🧭 **Operating posture** — an authored behavioral section (read-before-edit, git safety, concision, verification honesty). Original text, not a Claude Code copy; embedding hosts compose it via `pkg/runtime.OperatingPosture()` / `BuildSystemContext()`.
-- 🎛️ **Toggles everywhere** — tri-state `"prompt"` block in `settings.json` (`{"prompt": {"minimal": true, "projectInstructions": true}}` = CLAUDE.md only), CLI `--minimal-prompt` / `--prompt-sections` / `--disable-prompt-sections`, CLAUDE.md frontmatter `minimalPrompt` / `promptSections` / `disablePromptSections`. Sections: `environment`, `git-status`, `project-instructions`, `mcp-tools`, `compaction-summary`, `memory-walk-up`, `memory-imports`, `auto-memory`, `posture`. Defaults all-on (zero behavior change); inspect the result with `claw-code-go print-system-prompt --minimal-prompt`.
+- 🧭 **Operating posture + behavioral sections** — authored sections covering the qualities Claude Code teaches natively: the posture core (read-before-edit, git safety, concision, verification honesty) plus `communication` (final-message discipline, `file:line` refs, the `<system-reminder>` contract), `task-management` (todo hygiene incl. post-compaction reseed), `doing-tasks` (anti-over-engineering, objectivity, no time estimates), `tool-policy` (parallel calls, dedicated tools over shell, tool_search before "unavailable"), `git-safety` (the full git protocol) and `context-management` (don't wrap up early + end-of-turn self-check). Original text, not a Claude Code copy; embedding hosts compose via `pkg/runtime.OperatingPosture()` / `BuildSystemContext()`.
+- 🎛️ **Toggles everywhere** — tri-state `"prompt"` block in `settings.json` (`{"prompt": {"minimal": true, "projectInstructions": true}}` = CLAUDE.md only), CLI `--minimal-prompt` / `--prompt-sections` / `--disable-prompt-sections`, CLAUDE.md frontmatter `minimalPrompt` / `promptSections` / `disablePromptSections`. Sections: `environment`, `git-status`, `project-instructions`, `mcp-tools`, `compaction-summary`, `memory-walk-up`, `memory-imports`, `auto-memory`, `posture`, `communication`, `task-management`, `doing-tasks`, `tool-policy`, `git-safety`, `context-management`. Defaults all-on; `--system-prompt` replaces the authored base, `--append-system-prompt` suffixes the assembled prompt; inspect with `claw-code-go print-system-prompt --minimal-prompt`.
 
 ### ⚡ Prompt caching
 
@@ -173,7 +173,7 @@ claw-code-go print-system-prompt [--cwd ...] [--date ...] [--minimal-prompt] [--
 claw-code-go resume-session <file> [commands...]
 ```
 
-Main-mode flags include `--model`, `--permission-mode`, `--allowed-tools`, `--reasoning-effort`, `--output-format`, `--session-dir`, `--work-dir`, `--dangerously-skip-permissions`, and the prompt-section toggles `--minimal-prompt` / `--prompt-sections` / `--disable-prompt-sections`.
+Main-mode flags include `--model`, `--permission-mode`, `--allowed-tools`, `--reasoning-effort`, `--output-format`, `--session-dir`, `--work-dir`, `--dangerously-skip-permissions`, the prompt-section toggles `--minimal-prompt` / `--prompt-sections` / `--disable-prompt-sections`, and `--system-prompt` / `--append-system-prompt`.
 
 ---
 
