@@ -288,8 +288,10 @@ func TestExecuteTool_HookAskDoesNotAutoAllow(t *testing.T) {
 
 	_ = loop.ExecuteTool(context.Background(), "bash", map[string]any{"command": "echo hi"})
 
-	// Ask override should not cache any decision.
-	decision := mgr.Check("bash", "echo hi")
+	// Ask override should not cache any decision. Probe with a mutating
+	// command: read-only ones (like echo) are now legitimately auto-allowed
+	// by the built-in safe-list regardless of the cache.
+	decision := mgr.Check("bash", "touch hi.txt")
 	if decision != permissions.DecisionAsk {
 		t.Errorf("after hook ask, Check() = %d, want DecisionAsk (%d)", decision, permissions.DecisionAsk)
 	}
