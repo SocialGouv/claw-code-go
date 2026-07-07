@@ -182,6 +182,16 @@ func RunPrintSystemPrompt(args []string) {
 	disablePromptSectionsFlag := fs.String("disable-prompt-sections", "", "Comma-separated prompt sections to disable")
 	_ = fs.Parse(args)
 
+	// Chdir first so config layers, the CLAUDE.md walk-up, git status and the
+	// environment section all reflect the requested directory, not the
+	// process's own cwd.
+	if *cwdFlag != "" {
+		if err := os.Chdir(*cwdFlag); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot chdir to %s: %v\n", *cwdFlag, err)
+			os.Exit(1)
+		}
+	}
+
 	cfg := runtime.LoadConfig()
 	if *minimalPromptFlag || *promptSectionsFlag != "" || *disablePromptSectionsFlag != "" {
 		err := runtime.ApplyPromptSectionOverrides(cfg, *minimalPromptFlag,
@@ -194,16 +204,10 @@ func RunPrintSystemPrompt(args []string) {
 	loop := runtime.NewConversationLoop(cfg, runtime.NewNoAuthClient())
 	prompt := loop.SystemPrompt()
 
-	// Inject cwd and date as additional context when provided.
-	var extras []string
-	if *cwdFlag != "" {
-		extras = append(extras, fmt.Sprintf("Working directory: %s", *cwdFlag))
-	}
+	// Inject the date as additional context when provided (cwd is handled by
+	// the chdir above, so the environment section already reflects it).
 	if *dateFlag != "" {
-		extras = append(extras, fmt.Sprintf("Current date: %s", *dateFlag))
-	}
-	if len(extras) > 0 {
-		prompt = prompt + "\n\n" + strings.Join(extras, "\n")
+		prompt = prompt + "\n\n" + fmt.Sprintf("Current date: %s", *dateFlag)
 	}
 
 	fmt.Println(prompt)
