@@ -8,7 +8,6 @@ import (
 	"github.com/SocialGouv/claw-code-go/internal/commands"
 	"github.com/SocialGouv/claw-code-go/internal/runtime"
 	"github.com/SocialGouv/claw-code-go/internal/strutil"
-	"github.com/SocialGouv/claw-code-go/internal/tools"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,20 +48,12 @@ func RunDumpManifests(args []string) {
 	jsonOut := fs.Bool("json", false, "Output as JSON (default: human-readable text)")
 	_ = fs.Parse(args)
 
-	// Collect built-in tools.
-	builtinTools := []struct {
-		name string
-		desc string
-	}{
-		{tools.BashTool().Name, tools.BashTool().Description},
-		{tools.ReadFileTool().Name, tools.ReadFileTool().Description},
-		{tools.WriteFileTool().Name, tools.WriteFileTool().Description},
-		{tools.GlobTool().Name, tools.GlobTool().Description},
-		{tools.GrepTool().Name, tools.GrepTool().Description},
-	}
-	toolManifests := make([]ToolManifest, len(builtinTools))
-	for i, t := range builtinTools {
-		toolManifests[i] = ToolManifest{Name: t.name, Description: t.desc}
+	// Collect built-in tools from the real conversation loop, so the dump
+	// always matches what a session actually registers.
+	loop := runtime.NewConversationLoop(runtime.LoadConfig(), runtime.NewNoAuthClient())
+	toolManifests := make([]ToolManifest, len(loop.Tools))
+	for i, t := range loop.Tools {
+		toolManifests[i] = ToolManifest{Name: t.Name, Description: t.Description}
 	}
 
 	// Collect slash commands via registry.
