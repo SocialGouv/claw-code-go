@@ -151,3 +151,7 @@ func slugify(s string) string {
 	}
 	return s
 }
+
+// SlugifyAgentLabel derives a short display label from free text (exported
+// for the workflow engine's default agent labels).
+func SlugifyAgentLabel(s string) string { return slugify(s) }

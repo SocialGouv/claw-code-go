@@ -44,10 +44,11 @@ var builtinSubagentTypes = map[string]struct{}{
 }
 
 // orchestrationTools are excluded from every child toolset: a subagent must
-// not spawn or redefine subagents (unbounded recursion) nor stop its
-// parent's tasks.
+// not spawn or redefine subagents nor run workflows (unbounded recursion),
+// nor stop its parent's tasks. The oracle stays available — consulting a
+// read-only advisor from a child is legitimate.
 var orchestrationTools = map[string]struct{}{
-	"agent": {}, "define_subagent": {}, "task_stop": {},
+	"agent": {}, "define_subagent": {}, "workflow": {}, "task_stop": {},
 }
 
 // DefineSubagent registers a session-scoped subagent type.
@@ -131,7 +132,7 @@ func (loop *ConversationLoop) executeAgentSpawn(input map[string]any) (string, e
 	if err != nil {
 		return "", err
 	}
-	t, err := loop.spawnSubagent(spec)
+	t, err := loop.spawnSubagent(spec, true)
 	if err != nil {
 		return "", err
 	}
@@ -182,8 +183,11 @@ func (loop *ConversationLoop) executeDefineSubagent(input map[string]any) (strin
 }
 
 // spawnSubagent registers a task for the spec and launches the child loop in
-// the background. Returns the task snapshot the agent tool reports.
-func (loop *ConversationLoop) spawnSubagent(spec *tools.AgentSpec) (task.Task, error) {
+// the background. Returns the task snapshot the agent tool reports. notify
+// controls the completion <system-reminder>: direct agent-tool spawns want
+// it; workflow-orchestrated spawns don't (the workflow aggregates results
+// itself and N reminders would be noise).
+func (loop *ConversationLoop) spawnSubagent(spec *tools.AgentSpec, notify bool) (task.Task, error) {
 	if loop.TaskRegistry == nil {
 		return task.Task{}, fmt.Errorf("agent: task registry not available")
 	}
@@ -207,7 +211,7 @@ func (loop *ConversationLoop) spawnSubagent(spec *tools.AgentSpec) (task.Task, e
 		return task.Task{}, err
 	}
 
-	go loop.runSubagent(t.TaskID, spec, def, isCustom)
+	go loop.runSubagent(t.TaskID, spec, def, isCustom, notify)
 
 	got, _ := loop.TaskRegistry.Get(t.TaskID)
 	return got, nil
@@ -217,7 +221,7 @@ func (loop *ConversationLoop) spawnSubagent(spec *tools.AgentSpec) (task.Task, e
 // reports back: transcript → task output, status → completed/failed, and a
 // queued <system-reminder> so the parent learns of the completion at its
 // next turn boundary without polling.
-func (loop *ConversationLoop) runSubagent(taskID string, spec *tools.AgentSpec, def SubagentDef, isCustom bool) {
+func (loop *ConversationLoop) runSubagent(taskID string, spec *tools.AgentSpec, def SubagentDef, isCustom bool, notify bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), subagentTimeout)
 	defer cancel()
 
@@ -276,9 +280,11 @@ func (loop *ConversationLoop) runSubagent(taskID string, spec *tools.AgentSpec, 
 	}
 	_ = loop.TaskRegistry.SetStatus(taskID, status)
 
-	loop.QueueSystemReminder(fmt.Sprintf(
-		"Sub-agent %q (%s) %s — task %s. Preview:\n%s\nRetrieve the full report with task_output; it is not shown to the user, relay what matters.",
-		spec.Name, spec.SubagentType, verdict, taskID, excerpt(transcript, 400)))
+	if notify {
+		loop.QueueSystemReminder(fmt.Sprintf(
+			"Sub-agent %q (%s) %s — task %s. Preview:\n%s\nRetrieve the full report with task_output; it is not shown to the user, relay what matters.",
+			spec.Name, spec.SubagentType, verdict, taskID, excerpt(transcript, 400)))
+	}
 }
 
 // effectiveSubagentModel resolves the model a spawn will run on: explicit
