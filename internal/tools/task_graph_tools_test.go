@@ -119,6 +119,7 @@ func TestTaskListStatusAliases(t *testing.T) {
 func TestTodoWriteCompletedAliasAndGraphFields(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
+	t.Setenv("CLAW_TODOS_DIR", t.TempDir())
 
 	_, err := ExecuteTodoWrite(map[string]any{
 		"action": "write",
