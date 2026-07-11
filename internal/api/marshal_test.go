@@ -42,15 +42,46 @@ func TestMarshalAnthropicRequest_EffortAsOutputConfig(t *testing.T) {
 		t.Errorf("output_config.effort = %v, want xhigh", oc["effort"])
 	}
 
-	// adaptive thinking enabled by default on Opus 4.8.
+	// adaptive thinking enabled by default on Opus 4.8, with the readable
+	// summary requested (Opus 4.8 defaults display to "omitted" — empty
+	// thinking text — unless asked).
 	th, ok := m["thinking"].(map[string]any)
 	if !ok || th["type"] != "adaptive" {
 		t.Errorf("thinking = %v, want {type: adaptive}", m["thinking"])
+	}
+	if th["display"] != "summarized" {
+		t.Errorf("thinking.display = %v, want summarized (Opus 4.8 defaults to omitted)", th["display"])
 	}
 
 	// sampling params rejected by Opus 4.8 must be omitted.
 	if _, ok := m["temperature"]; ok {
 		t.Error("temperature must be omitted on Opus 4.8")
+	}
+}
+
+func TestMarshalAnthropicRequest_ThinkingDisplayCallerAndEnvOverride(t *testing.T) {
+	// An explicit caller Display wins over the default.
+	m := decodeWire(t, CreateMessageRequest{
+		Model:     "claude-opus-4-8",
+		MaxTokens: 4096,
+		Messages:  []Message{{Role: "user", Content: []ContentBlock{{Type: "text", Text: "hi"}}}},
+		Thinking:  &ThinkingConfig{Type: "adaptive", Display: "omitted"},
+	})
+	th, _ := m["thinking"].(map[string]any)
+	if th["display"] != "omitted" {
+		t.Errorf("thinking.display = %v, want caller's omitted", th["display"])
+	}
+
+	// CLAW_ANTHROPIC_THINKING_DISPLAY=off stops sending the field.
+	t.Setenv("CLAW_ANTHROPIC_THINKING_DISPLAY", "off")
+	m = decodeWire(t, CreateMessageRequest{
+		Model:     "claude-opus-4-8",
+		MaxTokens: 4096,
+		Messages:  []Message{{Role: "user", Content: []ContentBlock{{Type: "text", Text: "hi"}}}},
+	})
+	th, _ = m["thinking"].(map[string]any)
+	if _, ok := th["display"]; ok {
+		t.Errorf("thinking.display = %v, want absent under the off kill-switch", th["display"])
 	}
 }
 
