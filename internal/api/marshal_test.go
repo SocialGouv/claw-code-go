@@ -143,3 +143,18 @@ func TestMarshalAnthropicRequest_ReasoningModeTokenNotLeaked(t *testing.T) {
 		t.Errorf("non-effort token must not produce output_config: %v", m["output_config"])
 	}
 }
+
+// The exact billed thinking-token count rides message_delta usage as
+// output_tokens_details.thinking_tokens; parseSSEData must surface it.
+func TestParseSSEData_UsageThinkingTokens(t *testing.T) {
+	ev, err := parseSSEData(`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":348,"output_tokens_details":{"thinking_tokens":312}}}`)
+	if err != nil {
+		t.Fatalf("parseSSEData: %v", err)
+	}
+	if ev.Usage.OutputTokens != 348 {
+		t.Errorf("OutputTokens = %d, want 348", ev.Usage.OutputTokens)
+	}
+	if ev.Usage.OutputTokensDetails.ThinkingTokens != 312 {
+		t.Errorf("ThinkingTokens = %d, want 312", ev.Usage.OutputTokensDetails.ThinkingTokens)
+	}
+}
