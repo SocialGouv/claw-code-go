@@ -139,6 +139,9 @@ func TestBuildResponsesRequest_Shape(t *testing.T) {
 	if reasoning["effort"] != "high" {
 		t.Errorf("reasoning.effort = %v, want %q", reasoning["effort"], "high")
 	}
+	if reasoning["summary"] != "auto" {
+		t.Errorf("reasoning.summary = %v, want %q (streamed reasoning summaries)", reasoning["summary"], "auto")
+	}
 
 	// tools[0] is FLAT (no nested function object)
 	tools, ok := payload["tools"].([]interface{})
@@ -1161,5 +1164,146 @@ func TestStreamResponses_PreservesArgsAcrossCompletedReconciliation(t *testing.T
 	}
 	if want := `{"path":"/etc/hosts"}`; accumulatedArgs != want {
 		t.Errorf("input_json_delta accumulated args = %q, want %q (regression: a duplicate ContentBlockStart at the same index drops the args collected before it)", accumulatedArgs, want)
+	}
+}
+
+// streamReasoningFixture serves the frames over an SSE httptest server and
+// returns the translated event stream for a reasoning-effort request with
+// one declared tool (tools force the Responses API dispatch).
+func streamReasoningFixture(t *testing.T, frames []string) <-chan api.StreamEvent {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+		for _, f := range frames {
+			fmt.Fprintf(w, "data: %s\n\n", f)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	client := &Client{
+		APIKey:     "test-key",
+		BaseURL:    srv.URL,
+		Model:      "gpt-5.5",
+		MaxTokens:  256,
+		HTTPClient: srv.Client(),
+	}
+	req := api.CreateMessageRequest{
+		Model:           "gpt-5.5",
+		MaxTokens:       256,
+		ReasoningEffort: "high",
+		Messages: []api.Message{
+			{Role: "user", Content: []api.ContentBlock{{Type: "text", Text: "think hard"}}},
+		},
+		Tools: []api.Tool{
+			{Name: "alpha", InputSchema: api.InputSchema{Type: "object"}},
+		},
+	}
+	ch, err := client.StreamResponse(context.Background(), req)
+	if err != nil {
+		t.Fatalf("StreamResponse: %v", err)
+	}
+	return ch
+}
+
+// TestStreamResponses_ReasoningSummaryAsThinking verifies that reasoning
+// summary events are translated into an Anthropic-style "thinking" content
+// block: one block per reasoning item, parts separated by a blank line,
+// closed at the item's output_item.done (before the answer text block).
+func TestStreamResponses_ReasoningSummaryAsThinking(t *testing.T) {
+	frames := []string{
+		`{"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}`,
+		`{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1"}}`,
+		`{"type":"response.reasoning_summary_part.added","item_id":"rs_1","summary_index":0}`,
+		`{"type":"response.reasoning_summary_text.delta","item_id":"rs_1","delta":"First "}`,
+		`{"type":"response.reasoning_summary_text.delta","item_id":"rs_1","delta":"insight."}`,
+		`{"type":"response.reasoning_summary_text.done","item_id":"rs_1","summary_index":0}`,
+		`{"type":"response.reasoning_summary_part.added","item_id":"rs_1","summary_index":1}`,
+		`{"type":"response.reasoning_summary_text.delta","item_id":"rs_1","delta":"Second insight."}`,
+		`{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_1"}}`,
+		`{"type":"response.output_item.added","output_index":1,"item":{"type":"message","id":"msg_1"}}`,
+		`{"type":"response.output_text.delta","item_id":"msg_1","delta":"The answer."}`,
+		`{"type":"response.output_text.done","item_id":"msg_1"}`,
+		`{"type":"response.completed","response":{"id":"resp_1","status":"completed","usage":{"input_tokens":5,"output_tokens":9,"total_tokens":14}}}`,
+	}
+	ch := streamReasoningFixture(t, frames)
+
+	var (
+		typeByIndex   = map[int]string{}
+		thinkingText  string
+		answerText    string
+		thinkingIdx   = -1
+		textIdx       = -1
+		thinkingStops int
+		order         []string // coarse event order for the stop-before-text assertion
+	)
+	for ev := range ch {
+		switch ev.Type {
+		case api.EventContentBlockStart:
+			typeByIndex[ev.Index] = ev.ContentBlock.Type
+			switch ev.ContentBlock.Type {
+			case "thinking":
+				thinkingIdx = ev.Index
+				order = append(order, "thinking_start")
+			case "text":
+				textIdx = ev.Index
+				order = append(order, "text_start")
+			}
+		case api.EventContentBlockDelta:
+			switch ev.Delta.Type {
+			case "thinking_delta":
+				thinkingText += ev.Delta.Thinking
+			case "text_delta":
+				answerText += ev.Delta.Text
+			}
+		case api.EventContentBlockStop:
+			if typeByIndex[ev.Index] == "thinking" {
+				thinkingStops++
+				order = append(order, "thinking_stop")
+			}
+		}
+	}
+
+	if thinkingIdx < 0 {
+		t.Fatal("no thinking content_block_start emitted for the reasoning item")
+	}
+	if want := "First insight.\n\nSecond insight."; thinkingText != want {
+		t.Errorf("thinking text = %q, want %q (parts joined by blank line)", thinkingText, want)
+	}
+	if thinkingStops != 1 {
+		t.Errorf("thinking content_block_stop count = %d, want 1", thinkingStops)
+	}
+	if textIdx == thinkingIdx {
+		t.Errorf("thinking and text share block index %d", textIdx)
+	}
+	if answerText != "The answer." {
+		t.Errorf("answer text = %q, want %q", answerText, "The answer.")
+	}
+	if want := []string{"thinking_start", "thinking_stop", "text_start"}; fmt.Sprint(order) != fmt.Sprint(want) {
+		t.Errorf("event order = %v, want %v (thinking closes at output_item.done, before the answer)", order, want)
+	}
+}
+
+// TestStreamResponses_ReasoningWithoutSummaryEmitsNoBlock: a reasoning item
+// that never produces summary deltas (org not verified, model without
+// summaries) must not emit an empty thinking block.
+func TestStreamResponses_ReasoningWithoutSummaryEmitsNoBlock(t *testing.T) {
+	frames := []string{
+		`{"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}`,
+		`{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1"}}`,
+		`{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_1"}}`,
+		`{"type":"response.output_item.added","output_index":1,"item":{"type":"message","id":"msg_1"}}`,
+		`{"type":"response.output_text.delta","item_id":"msg_1","delta":"Hi."}`,
+		`{"type":"response.output_text.done","item_id":"msg_1"}`,
+		`{"type":"response.completed","response":{"id":"resp_1","status":"completed","usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}}`,
+	}
+	for ev := range streamReasoningFixture(t, frames) {
+		if ev.Type == api.EventContentBlockStart && ev.ContentBlock.Type == "thinking" {
+			t.Fatal("empty thinking block emitted for a summary-less reasoning item")
+		}
 	}
 }
