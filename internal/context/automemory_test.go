@@ -113,3 +113,40 @@ func TestWorkspaceFingerprintStable(t *testing.T) {
 		t.Errorf("distinct workspaces collide: %q", a)
 	}
 }
+
+func TestLoadAutoMemorySectionAt_ExplicitDirWins(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "MEMORY.md"), []byte("- pinned: yes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := LoadAutoMemorySectionAt(dir)
+	if !strings.Contains(got, "- pinned: yes") {
+		t.Errorf("explicit dir content missing:\n%s", got)
+	}
+	if !strings.Contains(got, dir) {
+		t.Errorf("explicit dir path missing from instructions:\n%s", got)
+	}
+}
+
+func TestLoadAutoMemorySectionAt_EmptyDir(t *testing.T) {
+	if got := LoadAutoMemorySectionAt(""); got != "" {
+		t.Errorf("empty dir must render nothing, got %q", got)
+	}
+}
+
+// A workDir-derived directory is the wrong default for a host that runs each
+// session in a fresh directory: two workDirs fingerprint apart, so the agent
+// would start empty every time. The override is what closes that.
+func TestAssembler_AutoMemoryDirOverridesWorkDirFingerprint(t *testing.T) {
+	memDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(memDir, "MEMORY.md"), []byte("- shared across worktrees"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	opts := AssembleOptions{AutoMemory: true, AutoMemoryDir: memDir}
+	for _, workDir := range []string{t.TempDir(), t.TempDir()} {
+		got := NewAssemblerWithOptions(workDir, opts).Assemble()
+		if !strings.Contains(got, "- shared across worktrees") {
+			t.Errorf("workDir %s did not see the pinned memory:\n%s", workDir, got)
+		}
+	}
+}
