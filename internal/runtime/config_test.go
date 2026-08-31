@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"github.com/SocialGouv/claw-code-go/internal/api"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -16,6 +18,26 @@ func clearProviderEnvs(t *testing.T) {
 	t.Setenv("XAI_API_KEY", "")
 	t.Setenv("DASHSCOPE_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
+}
+
+func TestLoadConfigAllowImmediateStructuredOutput(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Chdir(dir)
+	clearProviderEnvs(t)
+
+	settingsDir := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settings := []byte(`{"allowImmediateStructuredOutput": true}`)
+	if err := os.WriteFile(filepath.Join(settingsDir, "settings.json"), settings, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg := LoadConfig(); !cfg.AllowImmediateStructuredOutput {
+		t.Fatal("allowImmediateStructuredOutput setting was not loaded")
+	}
 }
 
 func TestDetectProviderXAI(t *testing.T) {
