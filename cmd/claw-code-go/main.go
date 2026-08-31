@@ -91,6 +91,7 @@ func main() {
 	minimalPromptFlag := flag.Bool("minimal-prompt", false, "Disable all automatic system-prompt sections (context, memory, posture, MCP list) — small-model mode")
 	promptSectionsFlag := flag.String("prompt-sections", "", "Comma-separated prompt sections to enable EXCLUSIVELY (implies --minimal-prompt). Sections: "+strings.Join(runtime.PromptSectionNames(), ", "))
 	disablePromptSectionsFlag := flag.String("disable-prompt-sections", "", "Comma-separated prompt sections to disable (others keep their defaults)")
+	allowImmediateStructuredOutputFlag := flag.Bool("allow-immediate-structured-output", false, "Allow structured_output before any work tool has completed")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: claw-code-go [subcommand] [options]\n\n")
@@ -160,6 +161,9 @@ func main() {
 	}
 	if *outputFormatFlag != "" {
 		cfg.OutputFormat = *outputFormatFlag
+	}
+	if *allowImmediateStructuredOutputFlag {
+		cfg.AllowImmediateStructuredOutput = true
 	}
 
 	// --dangerously-skip-permissions overrides permission mode to full access.

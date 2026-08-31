@@ -50,3 +50,12 @@ func TestStructuredOutput(t *testing.T) {
 		})
 	}
 }
+
+func TestStructuredOutputToolDescribesTerminalUse(t *testing.T) {
+	description := StructuredOutputTool().Description
+	for _, required := range []string{"ENDS the session", "ONLY after the mission is fully complete", "NEVER use it to describe planned or remaining work"} {
+		if !strings.Contains(description, required) {
+			t.Errorf("description %q does not contain %q", description, required)
+		}
+	}
+}

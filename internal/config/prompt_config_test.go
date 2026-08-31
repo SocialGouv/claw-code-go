@@ -63,6 +63,15 @@ func TestMergePromptConfigExplicitFalseWins(t *testing.T) {
 	}
 }
 
+func TestMergeAllowImmediateStructuredOutputExplicitFalseWins(t *testing.T) {
+	dst := &Settings{AllowImmediateStructuredOutput: boolPtr(true)}
+	src := &Settings{AllowImmediateStructuredOutput: boolPtr(false)}
+	merge(dst, src)
+	if dst.AllowImmediateStructuredOutput == nil || *dst.AllowImmediateStructuredOutput {
+		t.Errorf("AllowImmediateStructuredOutput = %v, want false", dst.AllowImmediateStructuredOutput)
+	}
+}
+
 func TestValidatePromptBlock(t *testing.T) {
 	// Valid block: no diagnostics.
 	res := ValidateSettingsJSON([]byte(`{"prompt": {"minimal": true, "gitStatus": false}}`), "settings.json")
