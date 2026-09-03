@@ -3,6 +3,7 @@ package apikit
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -220,4 +221,58 @@ func TestMaybeRefreshLive_DisabledByEnv(t *testing.T) {
 	MaybeRefreshLive(reg)
 	// Nothing observable to assert beyond "no panic, no goroutine spawned".
 	// The env-guard inside MaybeRefreshLive returns immediately.
+}
+
+// A live refresh must not mutate a published *ModelEntry: LookupModel hands
+// that pointer out and callers dereference it after the read lock is gone, so
+// an in-place update races every one of them (the mutex guards the map, not
+// the structs). Reproduces the report from iterion's -race CI.
+func TestMergeLiveIntoRegistryDoesNotMutatePublishedEntries(t *testing.T) {
+	reg := &ModelRegistry{}
+	const canonical = "claude-opus-4-8"
+	if reg.LookupModel(canonical) == nil {
+		t.Fatalf("%s is missing from the embed registry — pick another fixture", canonical)
+	}
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// The exact shape preflight.ModelTokenLimitForModel uses: take the
+		// pointer under the read lock, read its fields after.
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if entry := reg.LookupModel(canonical); entry != nil {
+				_ = entry.ContextWindow
+				_ = entry.MaxOutput
+			}
+		}
+	}()
+
+	const passes = 300
+	for i := 1; i <= passes; i++ {
+		mergeLiveIntoRegistry(reg, &LiveCache{Entries: []LiveCacheEntry{{
+			Canonical:     canonical,
+			ContextWindow: uint32(1_000_000 + i),
+			MaxOutput:     uint32(64_000 + i),
+		}}})
+	}
+	close(stop)
+	wg.Wait()
+
+	entry := reg.LookupModel(canonical)
+	if entry == nil {
+		t.Fatal("the entry vanished from the registry")
+	}
+	if got, want := entry.ContextWindow, uint32(1_000_000+passes); got != want {
+		t.Errorf("last merge must win for ContextWindow: got %d, want %d", got, want)
+	}
+	if got, want := entry.MaxOutput, uint32(64_000+passes); got != want {
+		t.Errorf("last merge must win for MaxOutput: got %d, want %d", got, want)
+	}
 }
