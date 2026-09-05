@@ -121,3 +121,82 @@ func TestWorkflowTimeoutInterruptsBusyLoop(t *testing.T) {
 		t.Errorf("busy loop must hit the timeout, got %v", err)
 	}
 }
+
+// A schema-bearing agent() tells its child to answer through
+// structured_output and rejects when the child returned none: a typed result
+// is a contract, not a transcript to parse.
+func TestWorkflowAgentSchemaRejectsWithoutStructuredOutput(t *testing.T) {
+	loop := newWorkflowLoop("prose only, no structured call")
+	payload := runWorkflow(t, loop, map[string]any{
+		"script": `
+try {
+  await agent("judge this", {label: "judge", schema: {type: "object", required: ["ok"], properties: {ok: {type: "boolean"}}}});
+  return "resolved";
+} catch (e) { return String(e); }`,
+	})
+	got, _ := payload["result"].(string)
+	if !strings.Contains(got, "structured_output") {
+		t.Fatalf("a schema agent without a structured result must reject, got %q", got)
+	}
+	tasks := loop.TaskRegistry.List(nil)
+	if len(tasks) != 1 || !strings.Contains(tasks[0].Prompt, "structured_output") || !strings.Contains(tasks[0].Prompt, `"required"`) {
+		t.Fatalf("the child's prompt must carry the structured-result instruction and the schema: %+v", tasks)
+	}
+}
+
+// The typed result travels child → parent: a child that called
+// structured_output leaves its payload for the parent, keyed by task.
+func TestStructuredOutputPayloadReachesTheParent(t *testing.T) {
+	child := &ConversationLoop{Session: NewSession(), Config: &Config{AllowImmediateStructuredOutput: true}}
+	if _, err := child.executeStructuredOutput(map[string]any{"ok": true, "n": float64(2)}); err != nil {
+		t.Fatal(err)
+	}
+	got := child.lastStructuredOutput()
+	if got == nil || got["ok"] != true {
+		t.Fatalf("the child must record its structured_output payload, got %v", got)
+	}
+	parent := &ConversationLoop{Session: NewSession()}
+	parent.storeSubagentStructured("t-1", got)
+	back, ok := parent.subagentStructuredOutput("t-1")
+	if !ok || back["n"] != float64(2) {
+		t.Fatalf("the parent must read the child's payload by task id, got %v %v", back, ok)
+	}
+	if _, ok := parent.subagentStructuredOutput("t-2"); ok {
+		t.Fatal("an unknown task has no structured result")
+	}
+}
+
+func TestValidateStructured(t *testing.T) {
+	schema := map[string]interface{}{
+		"type":     "object",
+		"required": []interface{}{"ok", "count"},
+		"properties": map[string]interface{}{
+			"ok":    map[string]interface{}{"type": "boolean"},
+			"count": map[string]interface{}{"type": "integer"},
+			"tags":  map[string]interface{}{"type": "array"},
+			"note":  map[string]interface{}{"type": "string"},
+		},
+	}
+	cases := []struct {
+		name    string
+		payload map[string]any
+		wantErr string
+	}{
+		{"valid", map[string]any{"ok": true, "count": float64(3), "tags": []interface{}{"a"}}, ""},
+		{"missing required", map[string]any{"ok": true}, `missing required field "count"`},
+		{"wrong type", map[string]any{"ok": "yes", "count": float64(1)}, `field "ok": want boolean`},
+		{"non-integer", map[string]any{"ok": true, "count": 1.5}, `field "count": want integer`},
+		{"undeclared fields pass", map[string]any{"ok": false, "count": float64(0), "extra": 1}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateStructured(tc.payload, schema)
+			switch {
+			case tc.wantErr == "" && err != nil:
+				t.Fatalf("unexpected error: %v", err)
+			case tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)):
+				t.Fatalf("err = %v, want it to contain %q", err, tc.wantErr)
+			}
+		})
+	}
+}
