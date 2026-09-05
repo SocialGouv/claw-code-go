@@ -155,12 +155,12 @@ func TestMergeLiveIntoRegistry_PreservesEmbedAliases(t *testing.T) {
 	reg := &ModelRegistry{}
 	reg.ensureInit()
 	// Live data does not list "opus" alias; merge must not strip it.
-	// The embed maps "opus" to the newest Opus (claude-opus-4-8).
+	// The embed maps "opus" to the newest Opus (claude-opus-5).
 	cache := &LiveCache{Entries: []LiveCacheEntry{
-		{Canonical: "claude-opus-4-8", ContextWindow: 1_000_000, MaxOutput: 128_000},
+		{Canonical: "claude-opus-5", ContextWindow: 1_000_000, MaxOutput: 128_000},
 	}}
 	mergeLiveIntoRegistry(reg, cache)
-	if reg.ResolveAlias("opus") != "claude-opus-4-8" {
+	if reg.ResolveAlias("opus") != "claude-opus-5" {
 		t.Errorf("embed alias 'opus' was lost after merge")
 	}
 }

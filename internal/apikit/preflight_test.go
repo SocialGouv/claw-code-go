@@ -110,8 +110,8 @@ func TestResolveModelAlias(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"opus", "claude-opus-4-8"},
-		{"Sonnet", "claude-sonnet-4-7"},
+		{"opus", "claude-opus-5"},
+		{"Sonnet", "claude-sonnet-5"},
 		{"HAIKU", "claude-haiku-4-5"},
 		{"grok", "grok-3"},
 		{"grok-3", "grok-3"},
@@ -119,7 +119,7 @@ func TestResolveModelAlias(t *testing.T) {
 		{"grok-3-mini", "grok-3-mini"},
 		{"grok-2", "grok-2"},
 		{"unknown-model", "unknown-model"},
-		{"  opus  ", "claude-opus-4-8"},
+		{"  opus  ", "claude-opus-5"},
 		{"claude-opus-4-6", "claude-opus-4-6"},
 	}
 	for _, tt := range tests {

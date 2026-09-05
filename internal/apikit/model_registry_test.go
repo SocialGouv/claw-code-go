@@ -26,7 +26,9 @@ func TestModelRegistryLookup(t *testing.T) {
 		{"qwen-qwq-32b", false, "qwen-qwq-32b", 0},
 		{"qwen", false, "qwen-max", 0},
 		{"claude-opus-4-6", false, "claude-opus-4-6", 128_000},
-		{"OPUS", false, "claude-opus-4-8", 128_000},
+		{"OPUS", false, "claude-opus-5", 128_000},
+		{"claude-opus-4-8", false, "claude-opus-4-8", 128_000},
+		{"fable", false, "claude-fable-5-1", 128_000},
 		{"gpt-5.5", false, "gpt-5.5", 128_000},
 		{"openai/gpt-5.5", false, "gpt-5.5", 128_000},
 		{"unknown-model", true, "", 0},
@@ -61,8 +63,8 @@ func TestModelRegistryResolveAlias(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"opus", "claude-opus-4-8"},
-		{"sonnet", "claude-sonnet-4-7"},
+		{"opus", "claude-opus-5"},
+		{"sonnet", "claude-sonnet-5"},
 		{"haiku", "claude-haiku-4-5"},
 		{"grok", "grok-3"},
 		{"grok-mini", "grok-3-mini"},

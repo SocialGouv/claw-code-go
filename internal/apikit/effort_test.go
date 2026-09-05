@@ -21,7 +21,7 @@ func TestEffortCapabilities(t *testing.T) {
 			wantDefault:   "high",
 		},
 		{
-			name:          "opus alias resolves to 4.8 (API default high)",
+			name:          "opus alias resolves to the newest Opus, 5 (API default high)",
 			input:         "opus",
 			wantSupported: []string{"low", "medium", "high", "xhigh", "max"},
 			wantDefault:   "high",
@@ -105,7 +105,10 @@ func TestAnthropicProfile(t *testing.T) {
 		rejectsSampling bool
 	}{
 		{"claude-opus-4-8", true, "adaptive", true},
-		{"opus", true, "adaptive", true}, // alias → 4-8
+		{"opus", true, "adaptive", true}, // alias → 5
+		{"claude-opus-5", true, "adaptive", true},
+		{"claude-fable-5-1", true, "adaptive", true},
+		{"claude-sonnet-5", true, "adaptive", false},
 		{"claude-opus-4-7", true, "adaptive", true},
 		{"claude-opus-4-6", true, "adaptive", false},
 		{"claude-sonnet-4-6", true, "adaptive", false},
