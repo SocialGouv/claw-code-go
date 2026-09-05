@@ -12,8 +12,8 @@ func TestResolveModelAliasRouting(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"opus", "claude-opus-4-8"},
-		{"sonnet", "claude-sonnet-4-7"},
+		{"opus", "claude-opus-5"},
+		{"sonnet", "claude-sonnet-5"},
 		{"haiku", "claude-haiku-4-5"},
 		{"claude-haiku-4-5-20251213", "claude-haiku-4-5"},
 		{"grok", "grok-3"},
@@ -28,8 +28,8 @@ func TestResolveModelAliasRouting(t *testing.T) {
 		{"qwen-turbo", "qwen-turbo"},
 		{"qwen-qwq-32b", "qwen-qwq-32b"},
 		// Case insensitivity
-		{"Opus", "claude-opus-4-8"},
-		{"SONNET", "claude-sonnet-4-7"},
+		{"Opus", "claude-opus-5"},
+		{"SONNET", "claude-sonnet-5"},
 		{"Haiku", "claude-haiku-4-5"},
 		{"GROK", "grok-3"},
 		// Unknown model passes through

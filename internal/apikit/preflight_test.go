@@ -133,7 +133,7 @@ func TestResolveModelAlias(t *testing.T) {
 }
 
 func TestPreflightCheckWithAlias(t *testing.T) {
-	// "opus" resolves to claude-opus-4-8 (1M context window)
+	// "opus" resolves to claude-opus-5 (1M context window)
 	// 900k input + 128k output = 1_028k > 1M → should fail
 	err := PreflightCheck("opus", 900_000, 128_000)
 	if err == nil {
@@ -146,8 +146,8 @@ func TestPreflightCheckWithAlias(t *testing.T) {
 	if apiErr.Kind != ErrContextWindowExceeded {
 		t.Errorf("expected ErrContextWindowExceeded, got %d", apiErr.Kind)
 	}
-	if apiErr.Model != "claude-opus-4-8" {
-		t.Errorf("expected resolved model 'claude-opus-4-8', got %q", apiErr.Model)
+	if apiErr.Model != "claude-opus-5" {
+		t.Errorf("expected resolved model 'claude-opus-5', got %q", apiErr.Model)
 	}
 }
 

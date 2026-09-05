@@ -14,8 +14,8 @@ func TestModelRegistryLookup(t *testing.T) {
 		canonical string
 		maxOutput uint32
 	}{
-		{"opus", false, "claude-opus-4-8", 128_000},
-		{"sonnet", false, "claude-sonnet-4-7", 128_000},
+		{"opus", false, "claude-opus-5", 128_000},
+		{"sonnet", false, "claude-sonnet-5", 128_000},
 		{"haiku", false, "claude-haiku-4-5", 64_000},
 		{"grok", false, "grok-3", 64_000},
 		{"grok-mini", false, "grok-3-mini", 64_000},
