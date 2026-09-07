@@ -106,6 +106,27 @@ func TestNewClient_ChatGPTOAuthMode(t *testing.T) {
 	}
 }
 
+// TestNewClient_ChatGPTOAuthDefaultsToBakedVersion pins the identity claw
+// presents when the caller cannot name a Codex CLI version: the baked
+// release, on both the version header source and the User-Agent.
+func TestNewClient_ChatGPTOAuthDefaultsToBakedVersion(t *testing.T) {
+	client, err := New().NewClient(api.ProviderConfig{
+		OAuthToken:             "oauth-tok",
+		OpenAIChatGPTAccountID: "acct-1",
+		Model:                  "gpt-5.5",
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	c := client.(*Client)
+	if c.ClientVersion != api.ChatGPTClientVersion {
+		t.Errorf("ClientVersion = %q, want the baked %q", c.ClientVersion, api.ChatGPTClientVersion)
+	}
+	if want := chatgptOriginator + "/" + api.ChatGPTClientVersion; c.Identity.UserAgent != want {
+		t.Errorf("User-Agent = %q, want %q", c.Identity.UserAgent, want)
+	}
+}
+
 // TestSetAuthHeaders_ChatGPTOAuth verifies that in OAuth mode the four
 // masquerading headers (Authorization, ChatGPT-Account-ID, originator,
 // version) plus User-Agent are written to the outgoing request.
