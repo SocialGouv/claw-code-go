@@ -68,3 +68,59 @@ func TestExecuteBashHonorsCallerCancel(t *testing.T) {
 		t.Errorf("ExecuteBash didn't honor caller cancel: took %s", elapsed)
 	}
 }
+
+// TestBashTimeoutResolvesTheKnob covers the parse forms and the fallbacks
+// without spawning anything: an unset or unparsable value must land on the
+// default rather than on zero, since zero means "no bound here" and a typo
+// must never silently remove the bound.
+func TestBashTimeoutResolvesTheKnob(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  string
+		want time.Duration
+	}{
+		{"unset falls back to the default", "", DefaultBashTimeout},
+		{"a Go duration", "15m", 15 * time.Minute},
+		{"a bare number is seconds", "90", 90 * time.Second},
+		{"zero leaves the caller's context as the only bound", "0", 0},
+		{"a typo must not remove the bound", "15minutes", DefaultBashTimeout},
+		{"empty after trimming", "   ", DefaultBashTimeout},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CLAW_BASH_TIMEOUT", tc.env)
+			if got := bashTimeout(); got != tc.want {
+				t.Errorf("bashTimeout() = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestExecuteBashHonorsTheConfiguredTimeout proves the knob reaches the call
+// and not only the resolver. The budget is deliberately SHORTER than
+// DefaultBashTimeout: a test that raised it would pass just as well with the
+// env ignored, since the command would finish either way.
+func TestExecuteBashHonorsTheConfiguredTimeout(t *testing.T) {
+	t.Setenv("CLAW_BASH_TIMEOUT", "1s")
+
+	start := time.Now()
+	_, err := ExecuteBash(
+		context.Background(),
+		map[string]any{"command": "sleep 20"},
+		permissions.ModeAllow, "",
+	)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected a timeout error")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("error = %v, want a timeout", err)
+	}
+	if !strings.Contains(err.Error(), "CLAW_BASH_TIMEOUT") {
+		t.Errorf("error = %v, want it to name the way out — a bound that does not say how to raise it sends the reader to the wrong place", err)
+	}
+	// 1s budget + 2s WaitDelay; anything near 30s means the env was ignored.
+	if elapsed > 10*time.Second {
+		t.Errorf("took %s — the configured budget was not applied", elapsed)
+	}
+}

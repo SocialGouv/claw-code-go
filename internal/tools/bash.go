@@ -9,13 +9,43 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"time"
 )
 
 const (
-	bashTimeout   = 30 * time.Second
-	maxOutputSize = 10000
+	// DefaultBashTimeout bounds ONE bash call. Short on purpose: most of an
+	// agent's shell calls are probes, and a wedged probe costs the whole turn.
+	DefaultBashTimeout = 30 * time.Second
+	maxOutputSize      = 10000
 )
+
+// bashTimeout resolves the bound on one bash call. It reads CLAW_BASH_TIMEOUT
+// (a Go duration like "15m", or a bare number of seconds); 0 or negative leaves
+// the caller's context as the only bound; an unset or unparsable value falls
+// back to DefaultBashTimeout. Same shape as sseutil.StreamIdleTimeout, so the
+// two duration knobs read alike.
+//
+// The default is a PROBE's budget, and that is the right default. It is the
+// wrong budget for the call that matters most in a self-verifying loop: an
+// agent asked to check its own work runs the repo's build and test suite,
+// which is minutes on a large repo. With no way out, such an agent cannot
+// verify what it changed — it can only claim to have, which is the failure the
+// deterministic gate exists to prevent.
+func bashTimeout() time.Duration {
+	v := strings.TrimSpace(os.Getenv("CLAW_BASH_TIMEOUT"))
+	if v == "" {
+		return DefaultBashTimeout
+	}
+	if d, err := time.ParseDuration(v); err == nil {
+		return d
+	}
+	if n, err := strconv.Atoi(v); err == nil {
+		return time.Duration(n) * time.Second
+	}
+	return DefaultBashTimeout
+}
 
 // bashWarnWriter is the writer for bash validation warnings.
 // Defaults to os.Stderr; tests can replace it to capture output.
@@ -107,7 +137,11 @@ func ExecuteBashWithEnv(callerCtx context.Context, input map[string]any, mode pe
 	if callerCtx == nil {
 		callerCtx = context.Background()
 	}
-	ctx, cancel := context.WithTimeout(callerCtx, bashTimeout)
+	limit := bashTimeout()
+	ctx, cancel := callerCtx, context.CancelFunc(func() {})
+	if limit > 0 {
+		ctx, cancel = context.WithTimeout(callerCtx, limit)
+	}
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
@@ -143,7 +177,7 @@ func ExecuteBashWithEnv(callerCtx context.Context, input map[string]any, mode pe
 	if err != nil {
 		// Return output + error description; the caller decides if it's a hard error
 		if ctx.Err() == context.DeadlineExceeded {
-			return output, fmt.Errorf("command timed out after %s", bashTimeout)
+			return output, fmt.Errorf("command timed out after %s (raise it with CLAW_BASH_TIMEOUT)", limit)
 		}
 		if ctx.Err() == context.Canceled {
 			return output, fmt.Errorf("command cancelled: %w", ctx.Err())
