@@ -216,3 +216,53 @@ func TestATimeoutMessageNamesWhoDecidedIt(t *testing.T) {
 		t.Errorf("error = %v — it names a duration the call never ran for", err)
 	}
 }
+
+// TestTheTwoTimeoutDialsCompose pins the seam between the deployment dial
+// (CLAW_BASH_TIMEOUT) and the per-call one the tool schema exposes
+// (`timeout_seconds`).
+//
+// They are different powers and must not shadow each other: the env one is an
+// operator setting the floor every call runs at, the input one is the model
+// asking for room on a build or a test suite. An explicit ask therefore wins —
+// a caller that names a bound has said something more specific than a default.
+//
+// Without this, merging the two features could leave either dial inert and
+// every existing test would still pass: each one only ever exercises its own.
+func TestTheTwoTimeoutDialsCompose(t *testing.T) {
+	t.Run("an explicit ask overrides a longer deployment default", func(t *testing.T) {
+		t.Setenv("CLAW_BASH_TIMEOUT", "300s")
+
+		start := time.Now()
+		_, err := ExecuteBash(
+			context.Background(),
+			map[string]any{"command": "sleep 60", "timeout_seconds": 1},
+			permissions.ModeAllow, "",
+		)
+		if err == nil || !strings.Contains(err.Error(), "timed out") {
+			t.Fatalf("error = %v, want a timeout at the caller's 1s, not the 300s default", err)
+		}
+		if !strings.Contains(err.Error(), "timeout_seconds") {
+			t.Errorf("error = %v, want it to name the dial that decided — pointing at CLAW_BASH_TIMEOUT here sends the reader to a knob that would not have changed the outcome", err)
+		}
+		if elapsed := time.Since(start); elapsed > 20*time.Second {
+			t.Errorf("took %s — the deployment default shadowed the caller's ask", elapsed)
+		}
+	})
+
+	t.Run("the deployment default still applies with no explicit ask", func(t *testing.T) {
+		t.Setenv("CLAW_BASH_TIMEOUT", "1s")
+
+		start := time.Now()
+		_, err := ExecuteBash(
+			context.Background(),
+			map[string]any{"command": "sleep 60"},
+			permissions.ModeAllow, "",
+		)
+		if err == nil || !strings.Contains(err.Error(), "timed out") {
+			t.Fatalf("error = %v, want the 1s deployment default to bound the call", err)
+		}
+		if elapsed := time.Since(start); elapsed > 20*time.Second {
+			t.Errorf("took %s — the per-call dial shadowed the deployment default", elapsed)
+		}
+	})
+}

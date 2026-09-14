@@ -214,6 +214,16 @@ out, err := tools.ExecuteReadFile(ctx, map[string]any{"path": "README.md"})
 
 `ExecuteBash` additionally takes a `workspace string` for command validation (pass `""` to skip). The wrapper pins permissions to `ModeAllow`; gate invocations upstream (e.g. via an Iterion workflow's `allowed_tools` list).
 
+Bash accepts optional `timeout_seconds`, a whole number from 1 to 600. Omit it
+to keep the 30-second default; request a longer bound explicitly for builds or
+tests, for example `{"command":"go test ./...","timeout_seconds":120}`.
+Invalid values fail before starting a process. The caller's cancellation or
+earlier deadline always wins, and cancellation errors wrap the corresponding
+Go context error. On Unix, cancellation kills the process group, including
+descendants. Combined output retains only its first 10,000 bytes plus a
+truncation marker while draining the rest; extending the deadline does not
+extend the retained output or permissions.
+
 ---
 
 ## 📚 Reference
