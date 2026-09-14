@@ -2,6 +2,8 @@ package runtime_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/SocialGouv/claw-code-go/pkg/api"
@@ -51,5 +53,31 @@ func TestNewNoAuthClient(t *testing.T) {
 	_, err := c.StreamResponse(context.Background(), api.CreateMessageRequest{})
 	if err == nil {
 		t.Error("expected error from NoAuthClient")
+	}
+}
+
+func TestPublicProviderConfigForwardsChatGPTAccountID(t *testing.T) {
+	account := ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		account = r.Header.Get("ChatGPT-Account-ID")
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n"))
+	}))
+	defer srv.Close()
+	client, err := pkgrt.NewProviderClient(&pkgrt.ProviderConfig{
+		ProviderName: "openai", OAuthToken: "test-token", OpenAIChatGPTAccountID: "test-account",
+		BaseURL: srv.URL, Model: "gpt-5.5",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := client.StreamResponse(context.Background(), api.CreateMessageRequest{System: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range ch {
+	}
+	if account != "test-account" {
+		t.Fatalf("account header = %q", account)
 	}
 }
