@@ -39,6 +39,7 @@ The Rust → Go porting was driven end-to-end by [**Iterion**](https://github.co
 Five providers are wired through a unified `<provider>/<model-id>` addressing scheme (e.g. `openai/gpt-5.4-mini`, `anthropic/claude-sonnet-4-6`, `bedrock/anthropic.claude-sonnet-4-6`):
 
 - **Anthropic** & **OpenAI** — validated end-to-end (OpenAI routes through both `/v1/chat/completions` and `/v1/responses` for reasoning + tools).
+- **Codex ChatGPT login** — `--codex-auth` uses the local Codex sign-in for the current session. It reads `$CODEX_HOME/auth.json` (or `~/.codex/auth.json`) without changing it; API-key and other-provider selection remain unchanged unless this flag is set.
 - **AWS Bedrock**, **Google Vertex AI**, **Azure AI Foundry** — real implementations on top of the official SDKs, with live smoke tests under build tag `live`.
 - Capability-aware routing, fallback chains, and per-provider `reasoning_effort` translation in `internal/apikit`.
 - Typed `api.APIError` (`StatusCode`, `Retryable`) so callers drive retry classification via `errors.As`.
@@ -48,6 +49,7 @@ Five providers are wired through a unified `<provider>/<model-id>` addressing sc
 A rich tool surface re-exported from [`pkg/api/tools`](pkg/api/tools/) — pair of `XxxTool() api.Tool` (schema) + `ExecuteXxx(ctx, input)` (runtime):
 
 - 📄 **File I/O** — `ReadFile`, `WriteFile`, `FileEdit`, `Glob`, `Grep`, `ReadImage`, `NotebookEdit`, PDF extraction.
+- 🖼️ **Image generation** — OpenAI API and Codex sessions can call `image_gen` to create a PNG with `gpt-image-2`; the verified file is saved under `~/.claw-code/generated_images/` (override with `--image-dir`) and its path is returned in the conversation. Custom OpenAI-compatible endpoints are not assumed to support images.
 - 💻 **Execution** — `Bash` (with workspace validation), `WebFetch` (size cap, header filtering).
 - 🖱️ **Computer use** — full Anthropic action surface (`screenshot`, `*_click`, `type`, `key`, `mouse_move`, `cursor_position`, `left_click_drag`) backed by `xdotool` + ImageMagick on Linux/X11. Returns typed `ErrComputerUseUnavailable` when display/binaries are missing.
 - 🗣️ **Interaction** — `AskUser` with pluggable `Asker` interface (`StdinAsker`, `ProgrammaticAsker`, `TUIAsker`) and structured options; `RemoteTrigger` HTTP wrapper with timeout, body cap, header allow/deny lists, CRLF guard.
@@ -217,6 +219,14 @@ out, err := tools.ExecuteReadFile(ctx, map[string]any{"path": "README.md"})
 ## 📚 Reference
 
 ### Providers
+
+To generate an image with your Codex ChatGPT login, sign in with `codex login` first, then run:
+
+```bash
+claw-code-go --codex-auth --model gpt-5.5 --prompt 'Generate a drawing of a red square with image_gen.'
+```
+
+The generated PNG is private to your user account and remains on disk after the session. If Codex's access token has expired, open Codex to renew the login and retry. `--codex-auth` is opt-in; an OpenAI API key continues to work through the usual API path.
 
 | Provider | Status | Path |
 |----------|--------|------|

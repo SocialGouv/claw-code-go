@@ -15,9 +15,13 @@ import (
 // stubStreamClient answers every request with a scripted text-only turn.
 type stubStreamClient struct {
 	text string
+	seen chan []api.Tool
 }
 
-func (s *stubStreamClient) StreamResponse(_ context.Context, _ api.CreateMessageRequest) (<-chan api.StreamEvent, error) {
+func (s *stubStreamClient) StreamResponse(_ context.Context, req api.CreateMessageRequest) (<-chan api.StreamEvent, error) {
+	if s.seen != nil {
+		s.seen <- append([]api.Tool(nil), req.Tools...)
+	}
 	ch := make(chan api.StreamEvent, 8)
 	go func() {
 		defer close(ch)
@@ -30,6 +34,73 @@ func (s *stubStreamClient) StreamResponse(_ context.Context, _ api.CreateMessage
 		ch <- api.StreamEvent{Type: api.EventMessageStop}
 	}()
 	return ch, nil
+}
+
+type imageScopeClient struct{ *stubStreamClient }
+
+func (c *imageScopeClient) GenerateImage(_ context.Context, _ string) (api.GeneratedImage, error) {
+	return api.GeneratedImage{}, nil
+}
+
+func TestSubagentImageGenAllowLists(t *testing.T) {
+	seen := make(chan []api.Tool, 4)
+	client := &imageScopeClient{&stubStreamClient{text: "done", seen: seen}}
+	parent := NewConversationLoop(&Config{ProviderName: "openai", Model: "gpt-5.5"}, client)
+	parent.TaskRegistry = task.NewRegistry()
+	for _, def := range []SubagentDef{
+		{Name: "reader", SystemPrompt: "Read only.", AllowedTools: []string{"read_file"}},
+		{Name: "imager", SystemPrompt: "Create images.", AllowedTools: []string{"image_gen"}},
+	} {
+		if err := parent.DefineSubagent(def); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		kind string
+		want bool
+	}{
+		{"explore", false},
+		{"reader", false},
+		{"general-purpose", true},
+		{"imager", true},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			resolved := false
+			for _, tool := range parent.resolveSubagentTools(tc.kind) {
+				resolved = resolved || tool.Name == "image_gen"
+			}
+			if resolved != tc.want {
+				t.Fatalf("image_gen in resolved tools = %v, want %v", resolved, tc.want)
+			}
+			created, err := parent.spawnSubagent(&tools.AgentSpec{Prompt: "describe the task", Description: "test image scope", Name: tc.kind, SubagentType: tc.kind}, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case offered := <-seen:
+				found := false
+				for _, tool := range offered {
+					found = found || tool.Name == "image_gen"
+				}
+				if found != tc.want {
+					t.Fatalf("image_gen offered = %v, want %v", found, tc.want)
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("subagent never requested tools")
+			}
+			deadline := time.Now().Add(3 * time.Second)
+			for {
+				current, ok := parent.TaskRegistry.Get(created.TaskID)
+				if ok && current.Status.IsTerminal() {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("subagent did not finish")
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		})
+	}
 }
 
 func TestDefineSubagentValidation(t *testing.T) {

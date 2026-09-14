@@ -68,6 +68,8 @@ func main() {
 
 	promptFlag := flag.String("prompt", "", "Run a single prompt and exit")
 	modelFlag := flag.String("model", "", "Override the model to use")
+	codexAuthFlag := flag.Bool("codex-auth", false, "Use the local Codex ChatGPT login for this session")
+	imageDirFlag := flag.String("image-dir", "", "Directory for generated image files (default: ~/.claw-code/generated_images)")
 	replFlag := flag.Bool("repl", false, "Run in interactive REPL mode (default when no --prompt)")
 	sessionFlag := flag.String("session", "", "Session ID to load")
 	sessionDirFlag := flag.String("session-dir", "", "Directory to store sessions")
@@ -136,6 +138,9 @@ func main() {
 	if *sessionDirFlag != "" {
 		cfg.SessionDir = *sessionDirFlag
 	}
+	if *imageDirFlag != "" {
+		cfg.GeneratedImageDir = *imageDirFlag
+	}
 	if *compactFlag {
 		cfg.Compact = true
 	}
@@ -200,13 +205,24 @@ func main() {
 	// Resolve credentials using the multi-provider credential store.
 	// Env vars take precedence (ANTHROPIC_API_KEY, OPENAI_API_KEY).
 	// Falls back gracefully so the TUI can start and prompt the user to /login.
-	provider, token, authMethod, credErr := auth.ResolveCredentials()
+	var provider, token, authMethod string
+	var credErr error
+	if *codexAuthFlag {
+		credErr = configureCodexAuth(cfg, *modelFlag)
+		if credErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", credErr)
+			os.Exit(1)
+		}
+		provider, authMethod = "openai", "codex_oauth"
+	} else {
+		provider, token, authMethod, credErr = auth.ResolveCredentials()
+	}
 	if credErr == nil {
 		cfg.ProviderName = provider
 		cfg.AuthMethod = authMethod
 		if authMethod == "oauth" {
 			cfg.OAuthToken = token
-		} else {
+		} else if authMethod == "api_key" {
 			cfg.APIKey = token
 		}
 	} else {
@@ -280,7 +296,7 @@ func main() {
 	if *promptFlag != "" {
 		if credErr != nil {
 			fmt.Fprintln(os.Stderr, "Error: cannot use --prompt without valid credentials.")
-			fmt.Fprintln(os.Stderr, "Set ANTHROPIC_API_KEY or OPENAI_API_KEY, or run the TUI and use /login.")
+			fmt.Fprintln(os.Stderr, "Set ANTHROPIC_API_KEY or OPENAI_API_KEY, use --codex-auth, or run the TUI and use /login.")
 			os.Exit(1)
 		}
 		sigCh := make(chan os.Signal, 1)
@@ -303,6 +319,42 @@ func main() {
 
 	// Interactive TUI mode.
 	runTUI(cfg, loop)
+}
+
+func configureCodexAuth(cfg *runtime.Config, explicitModel string) error {
+	if cfg == nil {
+		return fmt.Errorf("Codex authentication requires a runtime configuration")
+	}
+	if explicitModel != "" && nonOpenAIModel(explicitModel) {
+		return fmt.Errorf("--codex-auth requires an OpenAI model")
+	}
+	if cfg.ProviderName != "" && cfg.ProviderName != "anthropic" && cfg.ProviderName != "openai" {
+		return fmt.Errorf("--codex-auth conflicts with the selected provider")
+	}
+	path, err := auth.CodexAuthPath()
+	if err != nil {
+		return err
+	}
+	if _, err := auth.LoadCodexCredentials(path); err != nil {
+		return err
+	}
+	cfg.ProviderName = "openai"
+	cfg.AuthMethod = "codex_oauth"
+	cfg.CodexAuthFile = path
+	cfg.OpenAIChatGPTAccountID = ""
+	cfg.OAuthToken = ""
+	cfg.APIKey = ""
+	cfg.BaseURL = ""
+	if explicitModel == "" && (cfg.Model == "" || nonOpenAIModel(cfg.Model)) {
+		cfg.Model = "gpt-5.5"
+	}
+	return nil
+}
+
+func nonOpenAIModel(model string) bool {
+	return strings.HasPrefix(model, "claude") || strings.HasPrefix(model, "anthropic/") ||
+		strings.HasPrefix(model, "xai/") || strings.HasPrefix(model, "bedrock/") ||
+		strings.HasPrefix(model, "vertex/") || strings.HasPrefix(model, "foundry/")
 }
 
 // bootstrap initializes the runtime subsystems in the correct order:

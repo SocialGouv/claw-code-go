@@ -909,6 +909,8 @@ func (m Model) handleLoginComplete(result loginCompleteMsg) (tea.Model, tea.Cmd)
 
 	m.cfg.ProviderName = result.provider
 	m.cfg.AuthMethod = result.method
+	m.cfg.CodexAuthFile = ""
+	m.cfg.OpenAIChatGPTAccountID = ""
 	if result.method == "oauth" {
 		m.cfg.OAuthToken = result.token
 		m.cfg.APIKey = ""
