@@ -1,20 +1,23 @@
 package tools
 
 import (
-	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/SocialGouv/claw-code-go/internal/api"
 	"github.com/SocialGouv/claw-code-go/internal/permissions"
 	"io"
+	"math"
+	"math/big"
 	"os"
 	"os/exec"
 	"time"
 )
 
 const (
-	bashTimeout   = 30 * time.Second
-	maxOutputSize = 10000
+	bashTimeout           = 30 * time.Second
+	maxBashTimeoutSeconds = 600
+	maxOutputSize         = 10000
 )
 
 // bashWarnWriter is the writer for bash validation warnings.
@@ -42,6 +45,10 @@ func BashTool() api.Tool {
 				"command": {
 					Type:        "string",
 					Description: "The bash command to execute",
+				},
+				"timeout_seconds": {
+					Type:        "integer",
+					Description: "Optional command deadline in whole seconds (1 to 600, default 30). Request a longer bounded deadline for builds or tests. Caller cancellation or an earlier caller deadline always wins; background processes are not a timeout workaround.",
 				},
 			},
 			Required: []string{"command"},
@@ -90,6 +97,10 @@ func ExecuteBashWithEnv(callerCtx context.Context, input map[string]any, mode pe
 	if !ok || command == "" {
 		return "", fmt.Errorf("bash: 'command' input is required and must be a string")
 	}
+	timeout, err := bashCommandTimeout(input)
+	if err != nil {
+		return "", err
+	}
 
 	// Validate command before execution.
 	if workspace == "" {
@@ -107,7 +118,7 @@ func ExecuteBashWithEnv(callerCtx context.Context, input map[string]any, mode pe
 	if callerCtx == nil {
 		callerCtx = context.Background()
 	}
-	ctx, cancel := context.WithTimeout(callerCtx, bashTimeout)
+	ctx, cancel := context.WithTimeout(callerCtx, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
@@ -127,23 +138,21 @@ func ExecuteBashWithEnv(callerCtx context.Context, input map[string]any, mode pe
 	// unblock instead of hanging the entire runner.
 	cmd.WaitDelay = 2 * time.Second
 
-	var buf bytes.Buffer
+	var buf bashOutput
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 
-	err := cmd.Run()
+	err = cmd.Run()
 
 	output := buf.String()
 
-	// Truncate output if too long
-	if len(output) > maxOutputSize {
-		output = output[:maxOutputSize] + "\n... [output truncated]"
-	}
-
 	if err != nil {
 		// Return output + error description; the caller decides if it's a hard error
+		if callerErr := callerCtx.Err(); callerErr != nil {
+			return output, fmt.Errorf("command stopped by caller: %w", callerErr)
+		}
 		if ctx.Err() == context.DeadlineExceeded {
-			return output, fmt.Errorf("command timed out after %s", bashTimeout)
+			return output, fmt.Errorf("command timed out after %s: %w", timeout, ctx.Err())
 		}
 		if ctx.Err() == context.Canceled {
 			return output, fmt.Errorf("command cancelled: %w", ctx.Err())
@@ -153,4 +162,73 @@ func ExecuteBashWithEnv(callerCtx context.Context, input map[string]any, mode pe
 	}
 
 	return output, nil
+}
+
+// Keep only the prefix while draining all output. Truncating after cmd.Run
+// allowed a noisy command to fill memory for its entire deadline. Stdout and
+// Stderr use this same comparable pointer, so os/exec serializes their Writes.
+type bashOutput struct {
+	data      [maxOutputSize]byte
+	size      int
+	truncated bool
+}
+
+func (b *bashOutput) Write(p []byte) (int, error) {
+	n := copy(b.data[b.size:], p)
+	b.size += n
+	b.truncated = b.truncated || n < len(p)
+	return len(p), nil
+}
+
+func (b *bashOutput) String() string {
+	output := string(b.data[:b.size])
+	if b.truncated {
+		output += "\n... [output truncated]"
+	}
+	return output
+}
+
+// Validate before converting to Duration (which can overflow) or spawning any
+// process. JSON-decoded tool inputs use float64; public Go callers may supply
+// int/int64 or json.Number. Missing preserves the historical 30-second limit;
+// null, non-numbers, fractions and out-of-range values are errors, not defaults.
+func bashCommandTimeout(input map[string]any) (time.Duration, error) {
+	raw, exists := input["timeout_seconds"]
+	if !exists {
+		return bashTimeout, nil
+	}
+	invalid := fmt.Errorf("bash: 'timeout_seconds' must be an integer from 1 to %d", maxBashTimeoutSeconds)
+	var seconds float64
+	switch n := raw.(type) {
+	case int:
+		seconds = float64(n)
+	case int64:
+		seconds = float64(n)
+	case float64:
+		seconds = n
+	case json.Number:
+		if !json.Valid([]byte(n)) {
+			return 0, invalid
+		}
+		var err error
+		seconds, err = n.Float64()
+		if err != nil {
+			return 0, invalid
+		}
+	default:
+		return 0, invalid
+	}
+	if math.IsNaN(seconds) || seconds < 1 || seconds > maxBashTimeoutSeconds || math.Trunc(seconds) != seconds {
+		return 0, invalid
+	}
+	if n, ok := raw.(json.Number); ok {
+		// UseNumber callers retained the lexeme. Do not round a fractional
+		// value (e.g. 600.00000000000000001) into an allowed integer. Check
+		// the range above first so huge exponents never reach the exact parser.
+		rational, ok := new(big.Rat).SetString(string(n))
+		if !ok || !rational.IsInt() {
+			return 0, invalid
+		}
+	}
+	return time.Duration(seconds) * time.Second, nil
 }
