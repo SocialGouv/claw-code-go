@@ -1,0 +1,101 @@
+name: 🧪 Tests
+
+# Until this existed, a pull request here carried no evidence at all: the only
+# checks were Socket Security's, which say nothing about whether the code
+# compiles or the suite passes. Two defects reached review on 2026-09-15 that a
+# `go build` would have named in seconds — a type redeclared after a rebase
+# stacked two copies of it, and a lock-free writer whose safety argument no test
+# exercised. Local runs were the only evidence there was, and a prediction that
+# was never compiled reads exactly like a verification.
+#
+# Go comes from `go.mod`, not from `devbox.json`. Two sources already disagree
+# (1.25.0 against go@1.26) and CI must not become the third: `go-version-file`
+# makes the module's own directive the single authority, which is also what the
+# toolchain line means for anyone building without devbox.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+# A superseded head teaches nothing, and the suite spawns real bash processes
+# with real sleeps — leaving stale runs alive costs minutes of runner time per
+# push for output nobody reads.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      # Separate from the test step on purpose: a build failure and a test
+      # failure are different reports, and the one this repo actually shipped
+      # was a build failure.
+      - name: Build
+        run: go build ./...
+
+      - name: Unit tests
+        run: go test ./...
+
+  race:
+    name: race
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      # Its own job rather than a flag on the one above: the detector roughly
+      # doubles the wall clock, and this repo has the shape that needs it —
+      # `bashOutput` is written by os/exec's copy goroutine with no lock, safe
+      # only because stdout and stderr share one descriptor. An edit that
+      # separates them is silent everywhere except here.
+      - name: Tests with the race detector
+        run: go test -race ./...
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: go vet
+        run: go vet ./...
+
+      # `gofmt -l` prints offenders and exits 0, so the exit code alone is not
+      # a gate — the file list has to be turned into one.
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt would rewrite these files:"
+            echo "$unformatted"
+            exit 1
+          fi
