@@ -7,6 +7,7 @@ import (
 	"github.com/SocialGouv/claw-code-go/internal/api"
 	"github.com/SocialGouv/claw-code-go/internal/permissions"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"strconv"
@@ -42,6 +43,12 @@ func bashTimeout() time.Duration {
 		return d
 	}
 	if n, err := strconv.Atoi(v); err == nil {
+		// Both sides: a large NEGATIVE n wraps back to a positive duration —
+		// measured at 512ns, which refuses `echo hello` instantly while
+		// pointing the reader at the knob.
+		if int64(n) > int64(math.MaxInt64/time.Second) || int64(n) < int64(math.MinInt64/time.Second) {
+			return DefaultBashTimeout
+		}
 		return time.Duration(n) * time.Second
 	}
 	return DefaultBashTimeout
@@ -137,12 +144,31 @@ func ExecuteBashWithEnv(callerCtx context.Context, input map[string]any, mode pe
 	if callerCtx == nil {
 		callerCtx = context.Background()
 	}
+	start := time.Now()
 	limit := bashTimeout()
+	// A non-positive budget means EXACTLY what it says: this function installs
+	// no bound, and the caller's context becomes the only one. Read the
+	// consequence before setting it — with a caller context that never cancels
+	// (the Background this function documents as its no-cancellation case) a
+	// wedged command never returns at all, and its process group is never
+	// reaped. os/exec runs the kill(-pgid) only from the goroutine it starts
+	// while ctx.Done() is non-nil, and only if that Done fires BEFORE Wait
+	// collects the result — so there is no arrangement here that reaps a tree
+	// nothing ever cancelled. 0 is an escape hatch for a caller that owns its
+	// own deadline, not a longer timeout.
 	ctx, cancel := callerCtx, context.CancelFunc(func() {})
 	if limit > 0 {
 		ctx, cancel = context.WithTimeout(callerCtx, limit)
 	}
 	defer cancel()
+	// Frozen at the gesture, not read at the conclusion: cmd.Run can spend up
+	// to WaitDelay after the kill, so a caller deadline landing inside that
+	// window would otherwise be blamed for a timeout the budget decided.
+	knobDecided := false
+	if limit > 0 {
+		callerDL, ok := callerCtx.Deadline()
+		knobDecided = !ok || !callerDL.Before(start.Add(limit))
+	}
 
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
 	if len(extraEnv) > 0 {
@@ -177,7 +203,10 @@ func ExecuteBashWithEnv(callerCtx context.Context, input map[string]any, mode pe
 	if err != nil {
 		// Return output + error description; the caller decides if it's a hard error
 		if ctx.Err() == context.DeadlineExceeded {
-			return output, fmt.Errorf("command timed out after %s (raise it with CLAW_BASH_TIMEOUT)", limit)
+			if knobDecided {
+				return output, fmt.Errorf("command timed out after %s (raise it with CLAW_BASH_TIMEOUT)", limit)
+			}
+			return output, fmt.Errorf("command timed out on the caller's deadline")
 		}
 		if ctx.Err() == context.Canceled {
 			return output, fmt.Errorf("command cancelled: %w", ctx.Err())

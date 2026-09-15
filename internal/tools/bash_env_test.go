@@ -13,6 +13,8 @@ import (
 // in it. The legacy ExecuteBash entry point delegates here with nil
 // extraEnv, so the test also locks in the no-extra-env baseline.
 func TestExecuteBashWithEnvAppendsEntries(t *testing.T) {
+	// These run a real bash: an ambient CLAW_BASH_TIMEOUT must not reach them.
+	t.Setenv("CLAW_BASH_TIMEOUT", "")
 	const probe = "ITERION_BASH_ENV_PROBE_VAL"
 
 	// Without extraEnv the var is unset.
@@ -47,6 +49,8 @@ func TestExecuteBashWithEnvAppendsEntries(t *testing.T) {
 // exec.Cmd convention. This is what lets a caller surface a
 // project-managed PATH that prepends the devbox bin directory.
 func TestExecuteBashWithEnvOverridesParentValue(t *testing.T) {
+	// These run a real bash: an ambient CLAW_BASH_TIMEOUT must not reach them.
+	t.Setenv("CLAW_BASH_TIMEOUT", "")
 	t.Setenv("ITERION_BASH_ENV_OVERRIDE", "from-parent")
 
 	out, err := ExecuteBashWithEnv(
@@ -67,6 +71,8 @@ func TestExecuteBashWithEnvOverridesParentValue(t *testing.T) {
 // up extra env (callers wanting that should switch to
 // ExecuteBashWithEnv).
 func TestExecuteBashLegacyEntryStillNoExtraEnv(t *testing.T) {
+	// These run a real bash: an ambient CLAW_BASH_TIMEOUT must not reach them.
+	t.Setenv("CLAW_BASH_TIMEOUT", "")
 	const probe = "ITERION_BASH_ENV_LEGACY"
 	out, err := ExecuteBash(
 		context.Background(),

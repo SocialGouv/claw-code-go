@@ -21,6 +21,9 @@ import (
 // would hang past `time` 60s. With the fix it returns inside ~32s
 // (30s ctx timeout + 2s WaitDelay) with a typed timeout error.
 func TestExecuteBashKillsOrphanGrandchild(t *testing.T) {
+	// Pinned: this test asserts against the DEFAULT budget, so an ambient
+	// CLAW_BASH_TIMEOUT must not reach it.
+	t.Setenv("CLAW_BASH_TIMEOUT", "")
 	start := time.Now()
 	out, err := ExecuteBash(
 		context.Background(),
@@ -46,6 +49,9 @@ func TestExecuteBashKillsOrphanGrandchild(t *testing.T) {
 // silently dropped and only the internal 30s timeout could stop a
 // runaway command.
 func TestExecuteBashHonorsCallerCancel(t *testing.T) {
+	// Pinned: this test asserts against the DEFAULT budget, so an ambient
+	// CLAW_BASH_TIMEOUT must not reach it.
+	t.Setenv("CLAW_BASH_TIMEOUT", "")
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		time.Sleep(200 * time.Millisecond)
@@ -122,5 +128,91 @@ func TestExecuteBashHonorsTheConfiguredTimeout(t *testing.T) {
 	// 1s budget + 2s WaitDelay; anything near 30s means the env was ignored.
 	if elapsed > 10*time.Second {
 		t.Errorf("took %s — the configured budget was not applied", elapsed)
+	}
+}
+
+// TestAZeroBudgetLeavesTheCallersContextAsTheOnlyBound pins the one thing a
+// zero budget must do: step aside. It must NOT be installed as a deadline of
+// zero — mutating the `limit > 0` branch to `true` does exactly that, and left
+// the whole suite green while every bash call died instantly with empty output.
+//
+// It deliberately claims NOTHING about reaping the process group. An earlier
+// version of this test did, and was inert: it passed a caller context WITH a
+// deadline, whose Done is non-nil, which is the case the code already handled —
+// a witness reachable another way. What a zero budget really costs, when the
+// caller's context never cancels, is documented at the call site and is not
+// testable here without hanging the suite.
+func TestAZeroBudgetLeavesTheCallersContextAsTheOnlyBound(t *testing.T) {
+	t.Setenv("CLAW_BASH_TIMEOUT", "0")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := ExecuteBash(ctx, map[string]any{"command": "sleep 60"}, permissions.ModeAllow, "")
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected the caller's deadline to end the call")
+	}
+	// Under 200ms means a zero budget was installed as a deadline — the call
+	// would be refused before running rather than bounded by its caller.
+	if elapsed < 200*time.Millisecond {
+		t.Errorf("returned in %s — a 0 budget was installed as a deadline instead of leaving the caller's context as the bound", elapsed)
+	}
+	// Past ~5s means the caller's deadline did not end the call at all.
+	if elapsed > 5*time.Second {
+		t.Errorf("returned in %s — the caller's deadline did not bound the call", elapsed)
+	}
+}
+
+// TestASecondsValueThatOverflowsKeepsTheBound covers the way this knob loses its
+// meaning by accident: int64(time.Duration) IS a count of nanoseconds, so an
+// operator writing the budget in nanoseconds produces a NEGATIVE duration, which
+// reads as "no bound" — the exact opposite of what they asked for.
+func TestASecondsValueThatOverflowsKeepsTheBound(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  string
+		want time.Duration
+	}{
+		{"the largest sane seconds value still resolves", "9223372036", 9223372036 * time.Second},
+		{"one past it must not go negative", "9223372037", DefaultBashTimeout},
+		{"the default spelled in nanoseconds", "30000000000", DefaultBashTimeout},
+		{"fifteen minutes spelled in nanoseconds", "900000000000", DefaultBashTimeout},
+		// A large NEGATIVE value wrapped back to a POSITIVE duration — measured
+		// at 512ns, which refuses `echo hello` instantly while blaming the knob.
+		{"a large negative must not wrap back to positive", "-9223372037", DefaultBashTimeout},
+		{"the pathological negative that resolved to 512ns", "-15817289833210771", DefaultBashTimeout},
+		{"an ordinary negative still means no bound", "-1", -1 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CLAW_BASH_TIMEOUT", tc.env)
+			got := bashTimeout()
+			if got != tc.want {
+				t.Errorf("bashTimeout() = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestATimeoutMessageNamesWhoDecidedIt: DeadlineExceeded is true whether the
+// budget or the CALLER's deadline fired. Naming the knob either way sends its
+// reader — an LLM agent — at the wrong remedy, with a duration the call never
+// ran for.
+func TestATimeoutMessageNamesWhoDecidedIt(t *testing.T) {
+	t.Setenv("CLAW_BASH_TIMEOUT", "")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	_, err := ExecuteBash(ctx, map[string]any{"command": "sleep 60"}, permissions.ModeAllow, "")
+	if err == nil {
+		t.Fatal("expected a timeout")
+	}
+	if strings.Contains(err.Error(), "CLAW_BASH_TIMEOUT") {
+		t.Errorf("error = %v — the caller's deadline fired, so pointing at the knob sends the reader to the wrong place", err)
+	}
+	if strings.Contains(err.Error(), DefaultBashTimeout.String()) {
+		t.Errorf("error = %v — it names a duration the call never ran for", err)
 	}
 }
