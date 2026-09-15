@@ -78,3 +78,44 @@ func TestExecuteBashNeverCarriesTheWholeOutput(t *testing.T) {
 		t.Fatalf("the run carried the output: allocated %d bytes for %d bytes of output", allocated, produced)
 	}
 }
+
+// TestBoundedOutputCapturesBothStreamsWithoutRacing pins the assumption the
+// bounded writer's safety rests on, which nothing else exercises.
+//
+// bashOutput has no lock. It is safe only because cmd.Stdout and cmd.Stderr
+// are the SAME pointer: os/exec's childStderr returns childStdout when
+// interfaceEqual(Stderr, Stdout) holds, so the child gets one pipe and one
+// goroutine copies it — there are never two concurrent Writes to race on.
+//
+// Give the two streams separate writers and that argument evaporates silently:
+// the output still looks plausible, and only a reader who knows to look finds
+// the interleaved corruption. Under `go test -race` this test is what turns
+// that edit red.
+func TestBoundedOutputCapturesBothStreamsWithoutRacing(t *testing.T) {
+	const lines = 200
+
+	out, err := ExecuteBash(
+		context.Background(),
+		map[string]any{"command": "for i in $(seq 1 " + strconv.Itoa(lines) + "); do echo out; echo err 1>&2; done"},
+		permissions.ModeAllow, "",
+	)
+	if err != nil {
+		t.Fatalf("command must succeed: %v", err)
+	}
+
+	// Both streams reached the same buffer — a writer wired to stdout only
+	// would drop every `err` line and still return something that reads fine.
+	gotOut := strings.Count(out, "out")
+	gotErr := strings.Count(out, "err")
+	if gotOut != lines || gotErr != lines {
+		t.Fatalf("captured %d stdout and %d stderr lines, want %d of each — the two streams do not share the buffer", gotOut, gotErr, lines)
+	}
+	// Every byte written is one of the two whole lines. A torn write (two
+	// goroutines copying into the array at once) shows up here as a line that
+	// is neither, which counting alone would miss.
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line != "out" && line != "err" {
+			t.Fatalf("output carries a torn line %q — the writes were not serialized", line)
+		}
+	}
+}
