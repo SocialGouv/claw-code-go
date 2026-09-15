@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"github.com/SocialGouv/claw-code-go/internal/api"
@@ -63,6 +62,38 @@ func bashStderr() io.Writer {
 		return bashWarnWriter
 	}
 	return os.Stderr
+}
+
+// bashOutput keeps the first maxOutputSize bytes and discards the rest as it
+// arrives, so a command's whole output never lives in memory at once: the
+// bound holds WHILE the command runs, not only once it returns. A build that
+// prints hundreds of megabytes therefore costs a fixed buffer, for as long as
+// its timeout allows it to keep printing.
+//
+// Stdout and Stderr are set to this same pointer on purpose — os/exec gives
+// both streams one descriptor when the two writers are interface-equal, which
+// is what serializes the writes instead of racing two goroutines on the array.
+type bashOutput struct {
+	data      [maxOutputSize]byte
+	size      int
+	truncated bool
+}
+
+func (b *bashOutput) Write(p []byte) (int, error) {
+	n := copy(b.data[b.size:], p)
+	b.size += n
+	b.truncated = b.truncated || n < len(p)
+	// Report the full length: a short write would make os/exec's copy loop
+	// report io.ErrShortWrite instead of letting the command run on.
+	return len(p), nil
+}
+
+func (b *bashOutput) String() string {
+	output := string(b.data[:b.size])
+	if b.truncated {
+		output += "\n... [output truncated]"
+	}
+	return output
 }
 
 // BashTool returns the tool definition for the bash tool.
@@ -187,18 +218,13 @@ func ExecuteBashWithEnv(callerCtx context.Context, input map[string]any, mode pe
 	// unblock instead of hanging the entire runner.
 	cmd.WaitDelay = 2 * time.Second
 
-	var buf bytes.Buffer
+	var buf bashOutput
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 
 	err := cmd.Run()
 
 	output := buf.String()
-
-	// Truncate output if too long
-	if len(output) > maxOutputSize {
-		output = output[:maxOutputSize] + "\n... [output truncated]"
-	}
 
 	if err != nil {
 		// Return output + error description; the caller decides if it's a hard error
