@@ -38,7 +38,7 @@ func TestPublicSurfaceRoundTrip(t *testing.T) {
 		t.Fatalf("ParseInvocation = (%q, %q, %v)", name, args, ok)
 	}
 
-	cmd, found, err := commands.LookupWorkspace(ws, name)
+	cmd, found, err := commands.LookupWorkspace(ws, name, 0)
 	if err != nil || !found {
 		t.Fatalf("LookupWorkspace = (%v, %v)", found, err)
 	}

@@ -87,7 +87,7 @@ func TestLookupWorkspaceMapsNamespaceToDirectory(t *testing.T) {
 	dir := t.TempDir()
 	want := writeCommand(t, dir, filepath.Join("sub", "nested.md"), "Reply NESTED-4412\n")
 
-	cmd, ok, err := LookupWorkspace(dir, "sub:nested")
+	cmd, ok, err := LookupWorkspace(dir, "sub:nested", 0)
 	if err != nil || !ok {
 		t.Fatalf("LookupWorkspace = (%v, %v), want found", ok, err)
 	}
@@ -110,11 +110,11 @@ func TestLookupWorkspaceDoesNotWalkAncestors(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, ok, err := LookupWorkspace(child, "outside"); ok || err != nil {
+	if _, ok, err := LookupWorkspace(child, "outside", 0); ok || err != nil {
 		t.Fatalf("LookupWorkspace from child = (%v, %v), want not found", ok, err)
 	}
 	// The control: the same file IS reachable from the directory that owns it.
-	if _, ok, err := LookupWorkspace(parent, "outside"); !ok || err != nil {
+	if _, ok, err := LookupWorkspace(parent, "outside", 0); !ok || err != nil {
 		t.Fatalf("LookupWorkspace from owner = (%v, %v), want found", ok, err)
 	}
 }
@@ -124,8 +124,8 @@ func TestLookupWorkspaceDoesNotWalkAncestors(t *testing.T) {
 func TestLookupWorkspaceRejectsTraversalName(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"../secret", "..", "a/../../b", "a.b"} {
-		if _, ok, err := LookupWorkspace(dir, name); err == nil || ok {
-			t.Errorf("LookupWorkspace(%q) = (%v, %v), want an error", name, ok, err)
+		if _, ok, err := LookupWorkspace(dir, name, 0); err == nil || ok {
+			t.Errorf("LookupWorkspace(%q, 0) = (%v, %v), want an error", name, ok, err)
 		}
 	}
 }
@@ -292,19 +292,19 @@ func TestLookupWorkspaceRefusesASymlinkOutOfTheCommandsDir(t *testing.T) {
 	}
 
 	for _, name := range []string{"leak", "esc:id_rsa"} {
-		cmd, ok, err := LookupWorkspace(ws, name)
+		cmd, ok, err := LookupWorkspace(ws, name, 0)
 		if ok || err == nil {
-			t.Errorf("LookupWorkspace(%q) = (ok=%v, err=%v) body=%q — the symlink escaped the commands dir",
+			t.Errorf("LookupWorkspace(%q, 0) = (ok=%v, err=%v) body=%q — the symlink escaped the commands dir",
 				name, ok, err, cmd.Body)
 		}
 		if strings.Contains(cmd.Body, "PROBE-SECRET") {
-			t.Errorf("LookupWorkspace(%q) leaked the target file", name)
+			t.Errorf("LookupWorkspace(%q, 0) leaked the target file", name)
 		}
 	}
 	// The control: a real file next to the symlinks still resolves, so the
 	// containment is not just refusing everything.
 	writeCommand(t, ws, filepath.Join("ns", "real.md"), "legitimate\n")
-	if _, ok, err := LookupWorkspace(ws, "ns:real"); !ok || err != nil {
+	if _, ok, err := LookupWorkspace(ws, "ns:real", 0); !ok || err != nil {
 		t.Errorf("a real namespaced command stopped resolving: ok=%v err=%v", ok, err)
 	}
 }
@@ -343,8 +343,8 @@ func TestLookupWorkspaceTreatsAnImpossibleNameAsNotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{strings.Repeat("a", 300), "trap", "seg:nested"} {
-		if _, ok, err := LookupWorkspace(ws, name); ok || err != nil {
-			t.Errorf("LookupWorkspace(%q) = (ok=%v, err=%v), want a clean not-found", name[:min(len(name), 12)], ok, err)
+		if _, ok, err := LookupWorkspace(ws, name, 0); ok || err != nil {
+			t.Errorf("LookupWorkspace(%q, 0) = (ok=%v, err=%v), want a clean not-found", name[:min(len(name), 12)], ok, err)
 		}
 	}
 }
@@ -388,12 +388,12 @@ func TestLookupWorkspaceReportsAnEmptyBodyAsFound(t *testing.T) {
 	writeCommand(t, ws, "empty.md", "")
 	writeCommand(t, ws, "fmonly.md", "---\ndescription: nothing else\n---\n")
 	for _, name := range []string{"empty", "fmonly"} {
-		cmd, ok, err := LookupWorkspace(ws, name)
+		cmd, ok, err := LookupWorkspace(ws, name, 0)
 		if !ok || err != nil {
-			t.Fatalf("LookupWorkspace(%q) = (%v, %v), want found", name, ok, err)
+			t.Fatalf("LookupWorkspace(%q, 0) = (%v, %v), want found", name, ok, err)
 		}
 		if cmd.Body != "" {
-			t.Errorf("LookupWorkspace(%q).Body = %q, want empty", name, cmd.Body)
+			t.Errorf("LookupWorkspace(%q, 0).Body = %q, want empty", name, cmd.Body)
 		}
 	}
 }
@@ -421,7 +421,7 @@ func TestLookupWorkspaceStripsFrontmatter(t *testing.T) {
 	dir := t.TempDir()
 	writeCommand(t, dir, "ship.md", "---\ndescription: ship the change\n---\nRun tests then commit.\n")
 
-	cmd, ok, err := LookupWorkspace(dir, "ship")
+	cmd, ok, err := LookupWorkspace(dir, "ship", 0)
 	if err != nil || !ok {
 		t.Fatalf("LookupWorkspace = (%v, %v)", ok, err)
 	}
@@ -439,7 +439,7 @@ func TestLookupWorkspaceStripsFrontmatter(t *testing.T) {
 func TestLookupWorkspaceMissingIsNotAnError(t *testing.T) {
 	dir := t.TempDir()
 	writeCommand(t, dir, "present.md", "body\n")
-	cmd, ok, err := LookupWorkspace(dir, "absent")
+	cmd, ok, err := LookupWorkspace(dir, "absent", 0)
 	if err != nil {
 		t.Fatalf("err = %v, want nil", err)
 	}
@@ -470,7 +470,7 @@ func TestLookupWorkspaceRefusesASymlinkedCommandsDirectory(t *testing.T) {
 		if err := os.Symlink(outside, filepath.Join(ws, ".claude", "commands")); err != nil {
 			t.Skipf("symlinks unavailable: %v", err)
 		}
-		cmd, ok, _ := LookupWorkspace(ws, "deploy")
+		cmd, ok, _ := LookupWorkspace(ws, "deploy", 0)
 		if ok || strings.Contains(cmd.Body, "HOST-ONLY") {
 			t.Errorf("a symlinked commands dir escaped: ok=%v body=%q", ok, cmd.Body)
 		}
@@ -488,7 +488,7 @@ func TestLookupWorkspaceRefusesASymlinkedCommandsDirectory(t *testing.T) {
 		if err := os.Symlink(shadow, filepath.Join(ws, ".claude")); err != nil {
 			t.Skipf("symlinks unavailable: %v", err)
 		}
-		cmd, ok, _ := LookupWorkspace(ws, "deploy")
+		cmd, ok, _ := LookupWorkspace(ws, "deploy", 0)
 		if ok || strings.Contains(cmd.Body, "HOST-ONLY") {
 			t.Errorf("a symlinked .claude escaped: ok=%v body=%q", ok, cmd.Body)
 		}
@@ -506,7 +506,7 @@ func TestLookupWorkspaceRefusesASymlinkedCommandsDirectory(t *testing.T) {
 		if err := os.Symlink("..", filepath.Join(ws, ".claude", "commands")); err != nil {
 			t.Skipf("symlinks unavailable: %v", err)
 		}
-		cmd, ok, _ := LookupWorkspace(ws, "secrets")
+		cmd, ok, _ := LookupWorkspace(ws, "secrets", 0)
 		if ok || strings.Contains(cmd.Body, "RUNNER SCRATCH") {
 			t.Errorf("a relative symlink escaped the checkout: ok=%v body=%q", ok, cmd.Body)
 		}
@@ -522,7 +522,7 @@ func TestLookupWorkspaceRefusesASymlinkedCommandsDirectory(t *testing.T) {
 		if err := os.Symlink(real, link); err != nil {
 			t.Skipf("symlinks unavailable: %v", err)
 		}
-		if _, ok, err := LookupWorkspace(link, "ok"); !ok || err != nil {
+		if _, ok, err := LookupWorkspace(link, "ok", 0); !ok || err != nil {
 			t.Errorf("a symlinked workspace stopped resolving: ok=%v err=%v", ok, err)
 		}
 	})
@@ -542,7 +542,7 @@ func TestLookupWorkspaceTreatsAFileShapedCommandsDirAsNotFound(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(ws, ".claude", "commands"), []byte("not a dir"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := LookupWorkspace(ws, "anything"); ok || err != nil {
+	if _, ok, err := LookupWorkspace(ws, "anything", 0); ok || err != nil {
 		t.Errorf("= (ok=%v, err=%v), want a clean not-found", ok, err)
 	}
 }
@@ -685,5 +685,92 @@ func TestExpandBoundAcceptsWhatFitsAndRefusesWhatDoesNot(t *testing.T) {
 	// Unbounded stays unbounded.
 	if _, _, err := Expand(cmd, strings.Repeat("y", 4096), 0); err != nil {
 		t.Errorf("maxBytes=0 refused: %v", err)
+	}
+}
+
+// The cheapest half of the class: a large command FILE needs no
+// amplification at all. Reading it whole and measuring afterwards is the
+// same defect the expander just stopped doing — and it is easier to
+// trigger, since the attacker only has to commit a file.
+//
+// Mutation: read the whole file and check its length afterwards — the
+// allocation assertion goes red (measured 2.00× the file, 537 MB for a
+// 256 MiB command).
+func TestLookupWorkspaceRefusesABigFileWithoutHoldingIt(t *testing.T) {
+	const maxBytes = 1 << 16
+	ws := t.TempDir()
+	dir := filepath.Join(ws, ".claude", "commands")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 16 MiB: far over the ceiling, small enough to keep the test quick.
+	big := make([]byte, 16<<20)
+	for i := range big {
+		big[i] = 'a'
+	}
+	if err := os.WriteFile(filepath.Join(dir, "huge.md"), big, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	big = nil
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	cmd, ok, err := LookupWorkspace(ws, "huge", maxBytes)
+	runtime.ReadMemStats(&after)
+
+	if !errors.Is(err, ErrBodyTooLarge) {
+		t.Fatalf("LookupWorkspace = (%v, %v), want ErrBodyTooLarge", ok, err)
+	}
+	if ok || cmd.Body != "" {
+		t.Errorf("a refused file returned %d bytes of body", len(cmd.Body))
+	}
+	if grew := after.TotalAlloc - before.TotalAlloc; grew > 16*maxBytes {
+		t.Errorf("refusing allocated %d bytes for a 16 MiB file, want at most %d — the file was held before being refused",
+			grew, 16*maxBytes)
+	}
+
+	// The control: a file under the ceiling still resolves.
+	writeCommand(t, ws, "small.md", "fits\n")
+	if _, ok, err := LookupWorkspace(ws, "small", maxBytes); !ok || err != nil {
+		t.Errorf("a small command stopped resolving: ok=%v err=%v", ok, err)
+	}
+	// And unbounded stays unbounded.
+	if _, ok, err := LookupWorkspace(ws, "huge", 0); !ok || err != nil {
+		t.Errorf("maxBytes=0 refused a big file: ok=%v err=%v", ok, err)
+	}
+}
+
+// The other quantity the ceiling never saw: splitting the arguments costs a
+// 16-byte header per field — a fixed 8× amplification of the ARGUMENT
+// bytes, paid even on the refusal path, and paid by every `$ARGUMENTS`-only
+// body that never looks at a positional.
+//
+// Mutation: split eagerly (`fields := strings.Fields(args)` before the
+// loop) — this goes red. It is also the fixture that exercises growHint's
+// cap, which nothing else reaches: only a LARGE ARGUMENT makes the hint
+// overshoot the bound.
+func TestExpandDoesNotPayForArgumentsItNeverReads(t *testing.T) {
+	const maxBytes = 12
+	// A body with no positional at all: `fields` is never needed.
+	cmd := WorkspaceCommand{Body: "$ARGUMENTS"}
+	// MANY fields, not one big token: the cost is a 16-byte header PER
+	// field, so a single 8 MiB word would allocate one header and prove
+	// nothing. 500 000 two-byte words ≈ 8 MB of headers under an eager
+	// split.
+	args := strings.Repeat("y ", 500000)
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	_, _, err := Expand(cmd, args, maxBytes)
+	runtime.ReadMemStats(&after)
+
+	if !errors.Is(err, ErrExpansionTooLarge) {
+		t.Fatalf("Expand = %v, want ErrExpansionTooLarge", err)
+	}
+	if grew := after.TotalAlloc - before.TotalAlloc; grew > 1<<20 {
+		t.Errorf("refusing allocated %d bytes for arguments never read, want under 1 MiB — the split was paid anyway",
+			grew)
 	}
 }
