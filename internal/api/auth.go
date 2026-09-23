@@ -219,12 +219,22 @@ var ForeignProviderEnvVars = []ForeignProviderEnvVar{
 		Hint:         "z.ai's API is reached through the Anthropic wire format — set `ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic` and `ANTHROPIC_AUTH_TOKEN=$ZAI_API_KEY`, then leave `ANTHROPIC_API_KEY` UNSET so Claude Code routes to z.ai instead of Anthropic",
 	},
 	{
-		// Moonshot exposes an Anthropic-compatible endpoint for Kimi, the
-		// same shape as z.ai's above, so the hint steers users to the same
-		// env-passthrough pattern rather than to a prefix router.
+		// Kimi is a first-class provider here (providers/moonshot, selected by
+		// the `moonshot/` prefix, funded by MOONSHOT_API_KEY through
+		// ResolveCredentials), so the hint names that route.
+		//
+		// It deliberately does NOT steer to ANTHROPIC_BASE_URL, unlike z.ai's
+		// hint above. That variable is z.ai's OWN documented wiring knob: a
+		// host carrying both keys holds z.ai's endpoint in it, so retargeting
+		// it at Moonshot ships one vendor's credential to the other's gateway.
+		// And even pointed the right way it makes the two providers
+		// indistinguishable downstream — every reader that maps a route back
+		// to the credential that paid sees one base URL and two possible
+		// payers, which is how a wall measured on one account parks the other.
+		// The prefix router has neither problem: the provider is named.
 		EnvVar:       "MOONSHOT_API_KEY",
-		ProviderName: "Moonshot (Kimi, Anthropic-compatible)",
-		Hint:         "Moonshot's API is reached through the Anthropic wire format — set `ANTHROPIC_BASE_URL=https://api.moonshot.ai/anthropic` and `ANTHROPIC_AUTH_TOKEN=$MOONSHOT_API_KEY`, then leave `ANTHROPIC_API_KEY` UNSET so Claude Code routes to Moonshot instead of Anthropic",
+		ProviderName: "Moonshot (Kimi)",
+		Hint:         "prefix your model name with `moonshot/` (e.g. `--model moonshot/kimi-k2`) so prefix routing selects the Moonshot provider, which spends MOONSHOT_API_KEY on Moonshot's own Anthropic-compatible endpoint — do NOT point `ANTHROPIC_BASE_URL` at Moonshot: that variable is z.ai's wiring knob, and the redirect hides which account a request is billed to",
 	},
 }
 
