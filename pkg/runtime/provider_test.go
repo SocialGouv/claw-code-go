@@ -19,6 +19,8 @@ func TestSelectProviderAllNames(t *testing.T) {
 		{"openai", "openai"},
 		{"xai", "openai"},       // xai uses openai provider
 		{"dashscope", "openai"}, // dashscope uses openai provider
+		{"zai", "zai"},
+		{"moonshot", "moonshot"},
 		{"bedrock", "bedrock"},
 		{"vertex", "vertex"},
 		{"foundry", "foundry"},

@@ -44,6 +44,19 @@ func TestSelectProviderAnthropic(t *testing.T) {
 	}
 }
 
+// Moonshot must select its OWN provider, not fall through to the anthropic
+// default: the default answers on api.anthropic.com, so a route named
+// "moonshot" would silently spend an Anthropic credential.
+func TestSelectProviderMoonshot(t *testing.T) {
+	p := SelectProvider("moonshot")
+	if p == nil {
+		t.Fatal("SelectProvider(\"moonshot\") returned nil")
+	}
+	if got := p.Name(); got != "moonshot" {
+		t.Errorf("SelectProvider(\"moonshot\").Name() = %q, want \"moonshot\"", got)
+	}
+}
+
 func TestSelectProviderDefaultIsAnthropic(t *testing.T) {
 	p := SelectProvider("unknown-provider")
 	if p == nil {
