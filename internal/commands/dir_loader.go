@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // LoadDirCommands walks from startDir up to the filesystem root and registers
@@ -100,20 +101,21 @@ func findAncestorCommandDirs(startDir string) ([]string, error) {
 // (--- … ---) from the body and returns (body, description). The description
 // is the frontmatter `description:` when present, else the first non-empty
 // body line, capped for help display.
+//
+// The opening `---` must be closed by a line that is exactly `---`, and the
+// block between must carry at least one `key:` line. Without both checks a
+// Markdown horizontal rule reads as frontmatter and the text under it is
+// silently dropped — harmless when the body is help text, not harmless when
+// it is a prompt sent to a model.
 func stripFrontmatter(content string) (body, description string) {
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	body = content
-	if strings.HasPrefix(content, "---\n") {
-		if end := strings.Index(content[4:], "\n---"); end >= 0 {
-			fm := content[4 : 4+end]
-			rest := content[4+end+len("\n---"):]
-			rest = strings.TrimPrefix(rest, "\n")
-			body = rest
-			for _, line := range strings.Split(fm, "\n") {
-				if v, ok := strings.CutPrefix(strings.TrimSpace(line), "description:"); ok {
-					description = strings.Trim(strings.TrimSpace(v), `"'`)
-					break
-				}
+	if fm, rest, ok := splitFrontmatter(content); ok {
+		body = rest
+		for _, line := range strings.Split(fm, "\n") {
+			if v, ok := strings.CutPrefix(strings.TrimSpace(line), "description:"); ok {
+				description = strings.Trim(strings.TrimSpace(v), `"'`)
+				break
 			}
 		}
 	}
@@ -125,8 +127,86 @@ func stripFrontmatter(content string) (body, description string) {
 			}
 		}
 	}
-	if len(description) > 120 {
-		description = description[:117] + "..."
+	return body, capRunes(description, 117)
+}
+
+// splitFrontmatter returns the frontmatter block and the body that follows
+// it, and whether content opened with a real frontmatter block.
+func splitFrontmatter(content string) (fm, rest string, ok bool) {
+	after, found := strings.CutPrefix(content, "---\n")
+	if !found {
+		return "", content, false
 	}
-	return body, description
+	for offset := 0; ; {
+		idx := strings.Index(after[offset:], "\n---")
+		if idx < 0 {
+			return "", content, false
+		}
+		at := offset + idx
+		tail := after[at+len("\n---"):]
+		// The closing delimiter owns its whole line: what follows it is
+		// whitespace then a newline or the end of the file, never "-" (a
+		// `----` rule). Trailing spaces after `---` are common and must not
+		// leave a whole YAML block sitting in the body.
+		if rest, blank := restOfLineIsBlank(tail); blank {
+			tail = rest
+			block := after[:at]
+			if !hasYAMLKey(block) {
+				return "", content, false
+			}
+			return block, strings.TrimPrefix(tail, "\n"), true
+		}
+		offset = at + 1
+	}
+}
+
+// restOfLineIsBlank reports whether the rest of s's first line is blank,
+// returning what follows that line. It is true at a newline (rest starts
+// after it) and at end of input.
+func restOfLineIsBlank(s string) (rest string, blank bool) {
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case ' ', '\t', '\r', '\f', '\v':
+			continue
+		case '\n':
+			return s[i:], true
+		default:
+			return s, false
+		}
+	}
+	return "", true
+}
+
+// hasYAMLKey reports whether block carries at least one `key:` line, which
+// is what separates a frontmatter block from a horizontal rule.
+func hasYAMLKey(block string) bool {
+	for _, line := range strings.Split(block, "\n") {
+		line = strings.TrimSpace(line)
+		i := strings.IndexByte(line, ':')
+		if i <= 0 {
+			continue
+		}
+		key := line[:i]
+		if key == strings.TrimSpace(key) && !strings.ContainsAny(key, " \t") {
+			return true
+		}
+	}
+	return false
+}
+
+// capRunes truncates s to at most n runes, on a rune boundary, appending an
+// ellipsis. Slicing by byte splits a multi-byte rune and yields a string
+// that is not valid UTF-8 — visible on a public API field.
+func capRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n+3 {
+		return s
+	}
+	count := 0
+	for i := range s {
+		if count == n {
+			return s[:i] + "..."
+		}
+		count++
+	}
+	return s
 }
