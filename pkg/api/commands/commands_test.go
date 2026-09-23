@@ -45,7 +45,10 @@ func TestPublicSurfaceRoundTrip(t *testing.T) {
 	if cmd.Description != "the nested one" {
 		t.Errorf("Description = %q", cmd.Description)
 	}
-	got, consumed := commands.Expand(cmd, args)
+	got, consumed, err := commands.Expand(cmd, args, 0)
+	if err != nil {
+		t.Fatalf("Expand: %v", err)
+	}
 	if got != "ARGS=[alpha beta] ONE=[alpha]" {
 		t.Errorf("Expand = %q", got)
 	}

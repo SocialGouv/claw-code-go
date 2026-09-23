@@ -1,8 +1,10 @@
 package commands
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -139,7 +141,7 @@ func TestLookupWorkspaceRejectsTraversalName(t *testing.T) {
 func TestExpandReportsWhetherItTookTheArguments(t *testing.T) {
 	consuming := []string{"ARGS=[$ARGUMENTS]", "FIRST=[$1]", "[$2]"}
 	for _, body := range consuming {
-		if _, consumed := Expand(WorkspaceCommand{Body: body}, "alpha beta"); !consumed {
+		if _, consumed, _ := Expand(WorkspaceCommand{Body: body}, "alpha beta", 0); !consumed {
 			t.Errorf("Expand(%q) reported consumed=false, want true", body)
 		}
 	}
@@ -147,7 +149,7 @@ func TestExpandReportsWhetherItTookTheArguments(t *testing.T) {
 	// caller has to append, or the arguments vanish.
 	literal := []string{"plain body", "index $0", "out of range $9", "a price $100", "an id $1_x"}
 	for _, body := range literal {
-		got, consumed := Expand(WorkspaceCommand{Body: body}, "alpha beta")
+		got, consumed, _ := Expand(WorkspaceCommand{Body: body}, "alpha beta", 0)
 		if consumed {
 			t.Errorf("Expand(%q) reported consumed=true, want false", body)
 		}
@@ -163,7 +165,7 @@ func TestExpandReportsWhetherItTookTheArguments(t *testing.T) {
 // body with prose changes what it means.
 func TestExpandPositionalDoesNotDependOnBodyLength(t *testing.T) {
 	for _, body := range []string{"$3", "$3 with a good deal more prose after it to pad the body out"} {
-		got, consumed := Expand(WorkspaceCommand{Body: body}, "a b c")
+		got, consumed, _ := Expand(WorkspaceCommand{Body: body}, "a b c", 0)
 		if !consumed || !strings.HasPrefix(got, "c") {
 			t.Errorf("Expand(%q) = (%q, %v), want the third argument substituted", body, got, consumed)
 		}
@@ -174,7 +176,7 @@ func TestExpandPositionalDoesNotDependOnBodyLength(t *testing.T) {
 // as literal text.
 func TestExpandSubstitutesArguments(t *testing.T) {
 	cmd := WorkspaceCommand{Body: "ARGS=[$ARGUMENTS] done"}
-	if got, _ := Expand(cmd, "hello world"); got != "ARGS=[hello world] done" {
+	if got, _, _ := Expand(cmd, "hello world", 0); got != "ARGS=[hello world] done" {
 		t.Errorf("Expand = %q", got)
 	}
 }
@@ -187,7 +189,7 @@ func TestExpandSubstitutesArguments(t *testing.T) {
 // and this reddens.
 func TestExpandPositionalIsOneBased(t *testing.T) {
 	cmd := WorkspaceCommand{Body: "[$1][$2][$3]"}
-	if got, _ := Expand(cmd, "alpha beta gamma"); got != "[alpha][beta][gamma]" {
+	if got, _, _ := Expand(cmd, "alpha beta gamma", 0); got != "[alpha][beta][gamma]" {
 		t.Errorf("Expand = %q, want [alpha][beta][gamma]", got)
 	}
 }
@@ -196,7 +198,7 @@ func TestExpandPositionalIsOneBased(t *testing.T) {
 // body silently loses the text an author wrote on purpose.
 func TestExpandLeavesOutOfRangePositionalLiteral(t *testing.T) {
 	cmd := WorkspaceCommand{Body: "[$1][$2][$3]"}
-	if got, _ := Expand(cmd, "only-one"); got != "[only-one][$2][$3]" {
+	if got, _, _ := Expand(cmd, "only-one", 0); got != "[only-one][$2][$3]" {
 		t.Errorf("Expand = %q, want [only-one][$2][$3]", got)
 	}
 }
@@ -210,7 +212,7 @@ func TestExpandLeavesOutOfRangePositionalLiteral(t *testing.T) {
 // "$1 literal" would substitute to itself under both, and prove nothing.
 func TestExpandDoesNotRescanSubstitutedArguments(t *testing.T) {
 	cmd := WorkspaceCommand{Body: "<$ARGUMENTS>"}
-	if got, _ := Expand(cmd, "$2 beta"); got != "<$2 beta>" {
+	if got, _, _ := Expand(cmd, "$2 beta", 0); got != "<$2 beta>" {
 		t.Errorf("Expand = %q, want <$2 beta>", got)
 	}
 }
@@ -218,7 +220,7 @@ func TestExpandDoesNotRescanSubstitutedArguments(t *testing.T) {
 // A body with no placeholder at all comes back byte-identical.
 func TestExpandLeavesAPlainBodyAlone(t *testing.T) {
 	cmd := WorkspaceCommand{Body: "Reply with exactly this token: KUMQUAT-7731"}
-	if got, _ := Expand(cmd, "ignored"); got != cmd.Body {
+	if got, _, _ := Expand(cmd, "ignored", 0); got != cmd.Body {
 		t.Errorf("Expand = %q, want the body unchanged", got)
 	}
 }
@@ -320,7 +322,7 @@ func TestExpandLeavesMultiDigitAndWordPrefixedDollarsAlone(t *testing.T) {
 		"$3 is out of range":      "$3 is out of range",
 	}
 	for body, want := range cases {
-		if got, _ := Expand(WorkspaceCommand{Body: body}, "alpha beta"); got != want {
+		if got, _, _ := Expand(WorkspaceCommand{Body: body}, "alpha beta", 0); got != want {
 			t.Errorf("Expand(%q) = %q, want %q", body, got, want)
 		}
 	}
@@ -613,5 +615,75 @@ func TestDynamicBodyFormsNamesTheClaudeEnvPlaceholders(t *testing.T) {
 		if got := DynamicBodyForms(body, "alpha"); !slices.Contains(got, "${CLAUDE_*}") {
 			t.Errorf("DynamicBodyForms(%q) = %v, want it to name the placeholder", body, got)
 		}
+	}
+}
+
+// The bound has to be enforced AS THE OUTPUT IS PRODUCED, not measured on a
+// finished string: both inputs are attacker-influenced when the body comes
+// from a checkout under review, and a body that passes any sane file-size
+// check still amplifies — 24 000 `$ARGUMENTS` times a pasted-diff argument
+// reaches gigabytes. Measuring afterwards bounds the BILL and not the
+// MEMORY, and the OOM lands on a multi-replica server's co-tenants.
+//
+// Mutation: expand unbounded and compare the length at the end — the
+// allocation assertion goes red (measured ~98 MB against a 512 KiB budget).
+func TestExpandRefusesWithoutAllocatingPastTheBound(t *testing.T) {
+	const maxBytes = 1 << 16
+	// Built before the measurement so the fixture is not counted.
+	//
+	// The body must sit UNDER the bound and still amplify past it, or the
+	// cheap literal-size pre-check short-circuits and this measures that
+	// guard instead of the produce-time one: 5 000 × 10 bytes = 50 000 < the
+	// 65 536 bound, expanding to 5 000 × 4 096 ≈ 20 MB. (A 24 000-repeat
+	// body was the first fixture and proved nothing — it is 240 KB, refused
+	// before the loop ever ran.)
+	body := strings.Repeat("$ARGUMENTS", 5000)
+	args := strings.Repeat("x", 4096)
+	if len(body) >= maxBytes {
+		t.Fatalf("fixture is inert: the body is %d bytes, the pre-check refuses it before the loop", len(body))
+	}
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	got, _, err := Expand(WorkspaceCommand{Body: body}, args, maxBytes)
+	runtime.ReadMemStats(&after)
+
+	if !errors.Is(err, ErrExpansionTooLarge) {
+		t.Fatalf("Expand = (%d bytes, %v), want ErrExpansionTooLarge", len(got), err)
+	}
+	if got != "" {
+		t.Errorf("a refused expansion returned %d bytes, want none", len(got))
+	}
+	// Unbounded this body allocates 5 000 × 4 096 ≈ 20 MB (measured: 115 MB
+	// of total churn through the builder's doubling). The budget is
+	// generous on purpose — it separates "bounded" from "not bounded" by
+	// two orders of magnitude, not by a tight constant that would flake.
+	if grew := after.TotalAlloc - before.TotalAlloc; grew > 8*maxBytes {
+		t.Errorf("refusing allocated %d bytes, want at most %d — the expansion was materialised before being refused",
+			grew, 8*maxBytes)
+	}
+}
+
+// The bound refuses; it never truncates, and it never fires on a body that
+// fits. Mutation: make the comparison `>=` and a body exactly at the bound
+// is refused.
+func TestExpandBoundAcceptsWhatFitsAndRefusesWhatDoesNot(t *testing.T) {
+	cmd := WorkspaceCommand{Body: "[$ARGUMENTS]"}
+	// "[" + args + "]" == 12 bytes with a 10-byte argument.
+	got, consumed, err := Expand(cmd, strings.Repeat("y", 10), 12)
+	if err != nil || !consumed || got != "["+strings.Repeat("y", 10)+"]" {
+		t.Errorf("exactly at the bound = (%q, %v, %v), want the expansion", got, consumed, err)
+	}
+	if _, _, err := Expand(cmd, strings.Repeat("y", 11), 12); !errors.Is(err, ErrExpansionTooLarge) {
+		t.Errorf("one byte over the bound = %v, want ErrExpansionTooLarge", err)
+	}
+	// A literal body larger than the bound is refused before any loop runs.
+	if _, _, err := Expand(WorkspaceCommand{Body: strings.Repeat("z", 20)}, "", 12); !errors.Is(err, ErrExpansionTooLarge) {
+		t.Errorf("an oversized literal body = %v, want ErrExpansionTooLarge", err)
+	}
+	// Unbounded stays unbounded.
+	if _, _, err := Expand(cmd, strings.Repeat("y", 4096), 0); err != nil {
+		t.Errorf("maxBytes=0 refused: %v", err)
 	}
 }
