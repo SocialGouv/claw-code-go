@@ -32,7 +32,9 @@ func TestParseInvocationRejectsPathLikeToken(t *testing.T) {
 	for _, prompt := range []string{
 		"/usr/bin/foo is broken, fix it",
 		"/etc/hosts is broken",
-		"/probe.md",
+		"/..",
+		"/.",
+		"/a:..:b",
 		"/",
 		"//double",
 		"/trailing:",
@@ -119,11 +121,16 @@ func TestLookupWorkspaceDoesNotWalkAncestors(t *testing.T) {
 	}
 }
 
-// The name charset is the traversal guard. Mutation: accept "." or "/" in a
-// name and a crafted name escapes the commands directory.
+// A name cannot SPELL traversal: a separator is refused outright, and a
+// component that is nothing but dots is refused too. (os.Root is what makes
+// containment a guarantee — see the symlink tests — but a name has no
+// business expressing it.)
+//
+// Mutation: drop the all-dots component check and `a:..:b` resolves to
+// `b.md`, climbing out of its namespace.
 func TestLookupWorkspaceRejectsTraversalName(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"../secret", "..", "a/../../b", "a.b"} {
+	for _, name := range []string{"../secret", "..", ".", "a/../../b", "a:..:b"} {
 		if _, ok, err := LookupWorkspace(dir, name, 0); err == nil || ok {
 			t.Errorf("LookupWorkspace(%q, 0) = (%v, %v), want an error", name, ok, err)
 		}
@@ -362,7 +369,7 @@ func TestFrontmatterIsNotAHorizontalRule(t *testing.T) {
 		"---\ndescription: ship it\n---\nreal body\n": "real body\n",
 	}
 	for content, wantBody := range cases {
-		if got, _ := stripFrontmatter(content); got != wantBody {
+		if got, _, _ := stripFrontmatter(content); got != wantBody {
 			t.Errorf("stripFrontmatter(%q) body = %q, want %q", content, got, wantBody)
 		}
 	}
@@ -371,7 +378,7 @@ func TestFrontmatterIsNotAHorizontalRule(t *testing.T) {
 // Mutation: slice the description by byte and a multi-byte rune is cut in
 // half, putting invalid UTF-8 on a public API field.
 func TestDescriptionCapIsRuneSafe(t *testing.T) {
-	_, desc := stripFrontmatter(strings.Repeat("é", 200) + "\n")
+	_, desc, _ := stripFrontmatter(strings.Repeat("é", 200) + "\n")
 	if !utf8.ValidString(desc) {
 		t.Errorf("description is not valid UTF-8: %q", desc)
 	}
@@ -555,7 +562,7 @@ func TestFrontmatterClosesOnATrailingWhitespaceDelimiter(t *testing.T) {
 		"---\ndescription: ship it\n--- \nreal body\n",
 		"---\ndescription: ship it\n---\t\nreal body\n",
 	} {
-		body, desc := stripFrontmatter(content)
+		body, desc, _ := stripFrontmatter(content)
 		if body != "real body\n" {
 			t.Errorf("stripFrontmatter(%q) body = %q, want the frontmatter stripped", content, body)
 		}
@@ -772,5 +779,84 @@ func TestExpandDoesNotPayForArgumentsItNeverReads(t *testing.T) {
 	if grew := after.TotalAlloc - before.TotalAlloc; grew > 1<<20 {
 		t.Errorf("refusing allocated %d bytes for arguments never read, want under 1 MiB — the split was paid anyway",
 			grew)
+	}
+}
+
+// Claude Code applies NO charset to a command name — its name is the whole
+// whitespace-delimited token — so a contributed file named `db.migrate.md`
+// resolves there and was permanently unreachable here. A dot inside a path
+// COMPONENT is an ordinary file name, not traversal.
+//
+// Mutation: drop '.' from the charset and the parity case stops resolving;
+// drop the all-dots component check and the traversal spellings come back.
+func TestNamesWithDotsResolveWhileDotComponentsStayRefused(t *testing.T) {
+	ws := t.TempDir()
+	writeCommand(t, ws, "db.migrate.md", "Run the migration.\n")
+	writeCommand(t, ws, filepath.Join("ops", "deploy.v2.md"), "Deploy v2.\n")
+
+	for _, tc := range []struct{ prompt, name, body string }{
+		{"/db.migrate", "db.migrate", "Run the migration."},
+		{"/ops:deploy.v2", "ops:deploy.v2", "Deploy v2."},
+	} {
+		name, _, ok := ParseInvocation(tc.prompt)
+		if !ok || name != tc.name {
+			t.Fatalf("ParseInvocation(%q) = (%q, %v), want %q", tc.prompt, name, ok, tc.name)
+		}
+		cmd, found, err := LookupWorkspace(ws, name, 0)
+		if !found || err != nil {
+			t.Fatalf("LookupWorkspace(%q) = (%v, %v), want it to resolve", name, found, err)
+		}
+		if cmd.Body != tc.body {
+			t.Errorf("LookupWorkspace(%q).Body = %q, want %q", name, cmd.Body, tc.body)
+		}
+	}
+
+	// The refusals a dot must NOT buy back.
+	for _, name := range []string{"..", ".", "a:..:b", "..:x", "x:.."} {
+		if _, _, ok := ParseInvocation("/" + name); ok {
+			t.Errorf("ParseInvocation(%q) parsed, want prose", "/"+name)
+		}
+		if _, found, err := LookupWorkspace(ws, name, 0); found || err == nil {
+			t.Errorf("LookupWorkspace(%q) = (%v, %v), want an error", name, found, err)
+		}
+	}
+}
+
+// The frontmatter this parser throws away is surfaced, so an embedder can
+// say what it dropped instead of letting a command that narrows itself
+// (`allowed-tools:`) expand unrestricted and in silence — the one
+// divergence with a security consequence was the only invisible one.
+//
+// Mutation: return nil from discarded(), or stop collecting the keys — the
+// embedder's warning has nothing to name and this reddens.
+func TestLookupWorkspaceSurfacesTheFrontmatterItDiscards(t *testing.T) {
+	ws := t.TempDir()
+	writeCommand(t, ws, "narrow.md",
+		"---\ndescription: a narrowed command\nallowed-tools: Read, Grep\nmodel: claude-3-5-haiku\ndisable-model-invocation: true\n---\nDo the thing.\n")
+
+	cmd, ok, err := LookupWorkspace(ws, "narrow", 0)
+	if !ok || err != nil {
+		t.Fatalf("LookupWorkspace = (%v, %v)", ok, err)
+	}
+	want := []string{"allowed-tools", "disable-model-invocation", "model"}
+	if !slices.Equal(cmd.DiscardedFrontmatter, want) {
+		t.Errorf("DiscardedFrontmatter = %v, want %v", cmd.DiscardedFrontmatter, want)
+	}
+	// `description:` is consumed, not discarded, and must not be reported.
+	if slices.Contains(cmd.DiscardedFrontmatter, "description") {
+		t.Error("description is acted on, so it is not discarded")
+	}
+	if cmd.Description != "a narrowed command" {
+		t.Errorf("Description = %q", cmd.Description)
+	}
+	if cmd.Body != "Do the thing." {
+		t.Errorf("Body = %q, want the frontmatter stripped", cmd.Body)
+	}
+
+	// A command with only a description discards nothing: no warning is owed.
+	writeCommand(t, ws, "plain.md", "---\ndescription: plain\n---\nbody\n")
+	plain, _, _ := LookupWorkspace(ws, "plain", 0)
+	if len(plain.DiscardedFrontmatter) != 0 {
+		t.Errorf("DiscardedFrontmatter = %v for a description-only header, want none", plain.DiscardedFrontmatter)
 	}
 }
