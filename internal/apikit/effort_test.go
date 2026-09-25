@@ -21,10 +21,10 @@ func TestEffortCapabilities(t *testing.T) {
 			wantDefault:   "high",
 		},
 		{
-			name:          "opus alias resolves to the newest Opus, 5 (API default high)",
+			name:          "opus alias resolves to Opus 5.5 (API default medium)",
 			input:         "opus",
 			wantSupported: []string{"low", "medium", "high", "xhigh", "max"},
-			wantDefault:   "high",
+			wantDefault:   "medium",
 		},
 		{
 			name:          "opus 4.7 by canonical",
