@@ -110,7 +110,7 @@ func TestResolveModelAlias(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"opus", "claude-opus-5"},
+		{"opus", "claude-opus-5-5"},
 		{"Sonnet", "claude-sonnet-5"},
 		{"HAIKU", "claude-haiku-4-5"},
 		{"grok", "grok-3"},
@@ -119,7 +119,7 @@ func TestResolveModelAlias(t *testing.T) {
 		{"grok-3-mini", "grok-3-mini"},
 		{"grok-2", "grok-2"},
 		{"unknown-model", "unknown-model"},
-		{"  opus  ", "claude-opus-5"},
+		{"  opus  ", "claude-opus-5-5"},
 		{"claude-opus-4-6", "claude-opus-4-6"},
 	}
 	for _, tt := range tests {
@@ -133,7 +133,7 @@ func TestResolveModelAlias(t *testing.T) {
 }
 
 func TestPreflightCheckWithAlias(t *testing.T) {
-	// "opus" resolves to claude-opus-5 (1M context window)
+	// "opus" resolves to claude-opus-5-5 (1M context window)
 	// 900k input + 128k output = 1_028k > 1M → should fail
 	err := PreflightCheck("opus", 900_000, 128_000)
 	if err == nil {
@@ -146,8 +146,8 @@ func TestPreflightCheckWithAlias(t *testing.T) {
 	if apiErr.Kind != ErrContextWindowExceeded {
 		t.Errorf("expected ErrContextWindowExceeded, got %d", apiErr.Kind)
 	}
-	if apiErr.Model != "claude-opus-5" {
-		t.Errorf("expected resolved model 'claude-opus-5', got %q", apiErr.Model)
+	if apiErr.Model != "claude-opus-5-5" {
+		t.Errorf("expected resolved model 'claude-opus-5-5', got %q", apiErr.Model)
 	}
 }
 
