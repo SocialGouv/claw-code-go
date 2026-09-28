@@ -100,7 +100,36 @@ func TestExtractPDFTextFromBytesRefusesACompressedBomb(t *testing.T) {
 	pdf.WriteString("\nendstream\nendobj\ntrailer\n<< /Size 2 /Root 1 0 R >>\n%%EOF\n")
 
 	_, err := ExtractPDFTextFromBytes([]byte(pdf.String()), testBudget)
-	if !errors.Is(err, ErrDecompressionBudget) {
-		t.Fatalf("a compressed bomb must fail with ErrDecompressionBudget, got %v", err)
+	if !errors.Is(err, ErrBudgetExceeded) {
+		t.Fatalf("a compressed bomb must fail with ErrBudgetExceeded, got %v", err)
+	}
+}
+
+// The budget's SECOND consumer: many small streams, each inflating
+// under the cap, sum to the same allocation one bomb would make. Eight
+// 6 MiB streams under an 8 MiB per-stream budget → 48 MiB total, err
+// must be the budget — this is the witness the round-2 hole shipped
+// through a green suite without.
+func TestExtractPDFTextFromBytesRefusesAMultiStreamSum(t *testing.T) {
+	const chunk = 6 << 20 // 6 MiB inflated, 10x under the per-stream budget
+	var compressed bytes.Buffer
+	zw, _ := zlib.NewWriterLevel(&compressed, zlib.BestCompression)
+	if _, err := zw.Write(bytes.Repeat([]byte("0"), chunk)); err != nil {
+		t.Fatal(err)
+	}
+	zw.Close()
+
+	var pdf strings.Builder
+	pdf.WriteString("%PDF-1.4\n")
+	for i := 0; i < 8; i++ {
+		pdf.WriteString("1 0 obj\n<< /Length " + fmt.Sprint(compressed.Len()) + " /Filter /FlateDecode >>\nstream\n")
+		pdf.Write(compressed.Bytes())
+		pdf.WriteString("\nendstream\nendobj\n")
+	}
+	pdf.WriteString("trailer\n<< /Size 2 /Root 1 0 R >>\n%%EOF\n")
+
+	_, err := ExtractPDFTextFromBytes([]byte(pdf.String()), testBudget)
+	if !errors.Is(err, ErrBudgetExceeded) {
+		t.Fatalf("a multi-stream sum over the budget must fail with ErrBudgetExceeded, got %v", err)
 	}
 }
