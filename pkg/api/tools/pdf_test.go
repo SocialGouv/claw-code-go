@@ -140,11 +140,6 @@ func TestExtractPDFTextFromBytesRefusesAMultiStreamSum(t *testing.T) {
 // the bare-"stream" needle mis-parsed and the "\nstream" needle
 // skipped).
 func TestExtractPDFTextFromBytesChainsMultipleStreams(t *testing.T) {
-	stream := func(s string) string {
-		return "1 0 obj\n<< /Length " + fmt.Sprint(len(s)) + " /Filter /FlateDecode >>" + s
-	}
-	_ = stream
-
 	build := func(first, second string) string {
 		var pdf strings.Builder
 		pdf.WriteString("%PDF-1.4\n")
