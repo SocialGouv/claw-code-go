@@ -1,12 +1,18 @@
 package tools
 
 import (
+	"bytes"
+	"compress/zlib"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// testBudget is far above anything the fixtures inflate to.
+const testBudget = 8 << 20
 
 // writeSimplePDF writes a minimal VALID one-page PDF (proper /Length,
 // xref and startxref — the scraper is stricter than poppler) with an
@@ -44,7 +50,7 @@ func writeSimplePDF(t *testing.T, dir string) string {
 
 func TestExtractPDFTextReturnsTheTextObject(t *testing.T) {
 	p := writeSimplePDF(t, t.TempDir())
-	text, err := ExtractPDFText(p)
+	text, err := ExtractPDFText(p, testBudget)
 	if err != nil {
 		t.Fatalf("extract: %v", err)
 	}
@@ -61,7 +67,7 @@ func TestExtractPDFTextOnNonPDFBytesIsEmptyNotAnError(t *testing.T) {
 	if err := os.WriteFile(p, []byte("plain text"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	text, err := ExtractPDFText(p)
+	text, err := ExtractPDFText(p, testBudget)
 	if err != nil {
 		t.Fatalf("non-PDF bytes should not error: %v", err)
 	}
@@ -71,7 +77,30 @@ func TestExtractPDFTextOnNonPDFBytesIsEmptyNotAnError(t *testing.T) {
 }
 
 func TestExtractPDFTextOnAMissingFileIsAnError(t *testing.T) {
-	if _, err := ExtractPDFText(filepath.Join(t.TempDir(), "absent.pdf")); err == nil {
+	if _, err := ExtractPDFText(filepath.Join(t.TempDir(), "absent.pdf"), testBudget); err == nil {
 		t.Fatal("expected an error for a missing file")
+	}
+}
+
+func TestExtractPDFTextFromBytesRefusesACompressedBomb(t *testing.T) {
+	// ~65 MiB of zeros compress to a few dozen KiB: under any file-size
+	// guard, miles over the budget. The budget must turn the bomb into
+	// an error, not a 65 MiB allocation.
+	var raw bytes.Buffer
+	zw, _ := zlib.NewWriterLevel(&raw, zlib.BestCompression)
+	if _, err := zw.Write(bytes.Repeat([]byte("0"), 65<<20)); err != nil {
+		t.Fatal(err)
+	}
+	zw.Close()
+
+	var pdf strings.Builder
+	pdf.WriteString("%PDF-1.4\n")
+	pdf.WriteString("1 0 obj\n<< /Length " + fmt.Sprint(raw.Len()) + " /Filter /FlateDecode >>\nstream\n")
+	pdf.Write(raw.Bytes())
+	pdf.WriteString("\nendstream\nendobj\ntrailer\n<< /Size 2 /Root 1 0 R >>\n%%EOF\n")
+
+	_, err := ExtractPDFTextFromBytes([]byte(pdf.String()), testBudget)
+	if !errors.Is(err, ErrDecompressionBudget) {
+		t.Fatalf("a compressed bomb must fail with ErrDecompressionBudget, got %v", err)
 	}
 }

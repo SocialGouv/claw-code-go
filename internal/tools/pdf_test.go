@@ -9,6 +9,11 @@ import (
 	"testing"
 )
 
+// testDecompressionBudget: the fixtures are a few hundred bytes; a few
+// MiB of headroom never triggers the budget path.
+const testDecompressionBudget = 8 << 20
+
+
 // buildSimplePDF creates a minimal PDF with uncompressed text.
 func buildSimplePDF(text string) []byte {
 	contentStream := fmt.Sprintf("BT\n/F1 12 Tf\n(%s) Tj\nET", text)
@@ -89,7 +94,10 @@ func buildFlatePDF(text string) []byte {
 
 func TestExtractsUncompressedText(t *testing.T) {
 	pdfBytes := buildSimplePDF("Hello World")
-	text := ExtractTextFromBytes(pdfBytes)
+	text, err := ExtractTextFromBytes(pdfBytes, testDecompressionBudget)
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
 	if text != "Hello World" {
 		t.Errorf("got %q, want %q", text, "Hello World")
 	}
@@ -97,7 +105,10 @@ func TestExtractsUncompressedText(t *testing.T) {
 
 func TestExtractsFlateCompressedText(t *testing.T) {
 	pdfBytes := buildFlatePDF("Compressed PDF Text")
-	text := ExtractTextFromBytes(pdfBytes)
+	text, extractErr := ExtractTextFromBytes(pdfBytes, testDecompressionBudget)
+	if extractErr != nil {
+		t.Fatalf("extract: %v", extractErr)
+	}
 	if text != "Compressed PDF Text" {
 		t.Errorf("got %q, want %q", text, "Compressed PDF Text")
 	}
@@ -110,7 +121,10 @@ func TestHandlesTJArrayOperator(t *testing.T) {
 			"2 0 obj\n<< /Length %d >>\nstream\n%s\nendstream\nendobj\n%%%%EOF\n",
 		len(contentStream), contentStream,
 	)
-	text := ExtractTextFromBytes([]byte(raw))
+	text, extractErr := ExtractTextFromBytes([]byte(raw), testDecompressionBudget)
+	if extractErr != nil {
+		t.Fatalf("extract: %v", extractErr)
+	}
 	if text != "Hello World" {
 		t.Errorf("got %q, want %q", text, "Hello World")
 	}
@@ -124,7 +138,10 @@ ET`
 		"%%PDF-1.4\n1 0 obj\n<< /Length %d >>\nstream\n%s\nendstream\nendobj\n%%%%EOF\n",
 		len(content), content,
 	)
-	text := ExtractTextFromBytes([]byte(raw))
+	text, extractErr := ExtractTextFromBytes([]byte(raw), testDecompressionBudget)
+	if extractErr != nil {
+		t.Fatalf("extract: %v", extractErr)
+	}
 	if text != "Hello (World)" {
 		t.Errorf("got %q, want %q", text, "Hello (World)")
 	}
@@ -132,7 +149,10 @@ ET`
 
 func TestReturnsEmptyForNonPDFData(t *testing.T) {
 	data := []byte("This is not a PDF file at all")
-	text := ExtractTextFromBytes(data)
+	text, err := ExtractTextFromBytes(data, testDecompressionBudget)
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
 	if text != "" {
 		t.Errorf("expected empty, got %q", text)
 	}
@@ -146,7 +166,7 @@ func TestExtractsTextFromFileOnDisk(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	text, err := ExtractText(pdfPath)
+	text, err := ExtractText(pdfPath, testDecompressionBudget)
 	if err != nil {
 		t.Fatalf("extract text: %v", err)
 	}
