@@ -13,7 +13,6 @@ import (
 // MiB of headroom never triggers the budget path.
 const testDecompressionBudget = 8 << 20
 
-
 // buildSimplePDF creates a minimal PDF with uncompressed text.
 func buildSimplePDF(text string) []byte {
 	contentStream := fmt.Sprintf("BT\n/F1 12 Tf\n(%s) Tj\nET", text)

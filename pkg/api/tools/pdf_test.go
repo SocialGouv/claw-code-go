@@ -133,3 +133,32 @@ func TestExtractPDFTextFromBytesRefusesAMultiStreamSum(t *testing.T) {
 		t.Fatalf("a multi-stream sum over the budget must fail with ErrBudgetExceeded, got %v", err)
 	}
 }
+
+// A positive multi-stream extraction: the scanner must CHAIN streams
+// (offset jumps past each endstream, including the glued ">>stream"
+// delimiter form — no newline, spec-tolerated, and exactly the shape
+// the bare-"stream" needle mis-parsed and the "\nstream" needle
+// skipped).
+func TestExtractPDFTextFromBytesChainsMultipleStreams(t *testing.T) {
+	stream := func(s string) string {
+		return "1 0 obj\n<< /Length " + fmt.Sprint(len(s)) + " /Filter /FlateDecode >>" + s
+	}
+	_ = stream
+
+	build := func(first, second string) string {
+		var pdf strings.Builder
+		pdf.WriteString("%PDF-1.4\n")
+		pdf.WriteString("1 0 obj\n<< /Length " + fmt.Sprint(len(first)) + " >>\nstream\n" + first + "\nendstream\nendobj\n")
+		pdf.WriteString("2 0 obj\n<< /Length " + fmt.Sprint(len(second)) + " >>stream\n" + second + "\nendstream\nendobj\n")
+		pdf.WriteString("trailer\n<< /Size 3 /Root 1 0 R >>\n%%EOF\n")
+		return pdf.String()
+	}
+
+	text, err := ExtractPDFTextFromBytes([]byte(build("BT\n(alpha) Tj\nET", "BT\n(beta) Tj\nET")), testBudget)
+	if err != nil {
+		t.Fatalf("two-stream extraction: %v", err)
+	}
+	if !strings.Contains(text, "alpha") || !strings.Contains(text, "beta") {
+		t.Fatalf("a chained multi-stream extraction lost a stream: %q", text)
+	}
+}
