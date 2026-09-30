@@ -219,7 +219,21 @@ func TestSpawnSubagentEndToEnd(t *testing.T) {
 	}
 
 	// Completion must queue a <system-reminder> notification and flushing
-	// must inject it as an IsInjected user message naming the task.
+	// must inject it as an IsInjected user message naming the task. The
+	// reminder is queued right after the terminal status is written, so wait
+	// for the reminder itself, not for the status that precedes it.
+	for {
+		loop.remindersMu.Lock()
+		queued := len(loop.pendingReminders)
+		loop.remindersMu.Unlock()
+		if queued > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("completion reminder never queued")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	loop.flushSystemReminders()
 	msgs := loop.Session.Messages
 	if len(msgs) == 0 {
