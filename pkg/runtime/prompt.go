@@ -17,6 +17,11 @@ import (
 //	workspace  the working directory and the ancestors   (MemorySkipWorkspace leaves them out)
 //	           from it up to and including MemoryRoot
 //
+// While MemoryRoot bounds the workspace, an @import of a workspace-scope
+// file must resolve inside it, transitively, and a workspace file that is a
+// symlink resolving outside it is skipped; the user scope and the outer
+// ancestors are the operator's and are not confined.
+//
 // They are values, not sections, so ResolvePromptSections and
 // PromptSectionNames know nothing of them: set them on the PromptConfig
 // itself. Every zero value keeps the unscoped behaviour, and the ancestors

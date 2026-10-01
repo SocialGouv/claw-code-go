@@ -95,8 +95,11 @@ func discoverRules(rulesDir, confine string) []ruleFile {
 }
 
 // resolvesWithin reports whether path, with its symlinks resolved, is dir or
-// lies below it. dir must already be resolved.
+// lies below it. dir must already be resolved; an empty dir admits nothing.
 func resolvesWithin(path, dir string) bool {
+	if dir == "" {
+		return false
+	}
 	real, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return false

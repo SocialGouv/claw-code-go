@@ -346,6 +346,11 @@ func TestMemoryRuleSymlinksStayInTheWorkspace(t *testing.T) {
 	if !strings.Contains(got, "TEAM-INSIDE-THE-ROOT") {
 		t.Errorf("a rule symlinked to elsewhere inside the root was dropped:\n%s", got)
 	}
+	// It is not even listed: the walk refuses the link, so the file never
+	// becomes a discovery candidate.
+	if _, ok := MemoryCandidateMtimes(l.workDir, workspace)[filepath.Join(l.root, ".claude", "rules", "leak-root.md")]; ok {
+		t.Error("a rule symlinked out of the workspace is a discovery candidate")
+	}
 
 	// No Root: the workspace is workDir alone, and team.md (inside the repo
 	// but outside workDir) no longer qualifies.
