@@ -29,11 +29,12 @@ func TestOpenAIOnlyOptionsRefusedByOtherProviders(t *testing.T) {
 		"zai":       zai.New(),
 	}
 	options := map[string]api.ProviderConfig{
-		"NoAmbientHeaders":    {APIKey: "k", Model: "m", NoAmbientHeaders: true},
-		"HTTPClient":          {APIKey: "k", Model: "m", HTTPClient: &http.Client{}},
-		"OpenAIWireAPI":       {APIKey: "k", Model: "m", OpenAIWireAPI: api.OpenAIWireChat},
-		"OpenAIStreamUsage":   {APIKey: "k", Model: "m", OpenAIStreamUsage: true},
-		"OpenAIModelVerbatim": {APIKey: "k", Model: "m", OpenAIModelVerbatim: true},
+		"NoAmbientHeaders":     {APIKey: "k", Model: "m", NoAmbientHeaders: true},
+		"HTTPClient":           {APIKey: "k", Model: "m", HTTPClient: &http.Client{}},
+		"OpenAIWireAPI":        {APIKey: "k", Model: "m", OpenAIWireAPI: api.OpenAIWireChat},
+		"OpenAIStreamUsage":    {APIKey: "k", Model: "m", OpenAIStreamUsage: true},
+		"OpenAIModelVerbatim":  {APIKey: "k", Model: "m", OpenAIModelVerbatim: true},
+		"OpenAIGenericRequest": {APIKey: "k", Model: "m", OpenAIGenericRequest: true},
 	}
 	for name, p := range providers {
 		for option, cfg := range options {
