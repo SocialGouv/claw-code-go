@@ -94,6 +94,16 @@ func discoverRules(rulesDir, confine string) []ruleFile {
 	return rules
 }
 
+// within reports whether real, an already-resolved path, is dir or lies
+// below it. dir must already be resolved too; an empty dir admits nothing.
+func within(real, dir string) bool {
+	if dir == "" {
+		return false
+	}
+	rel, err := filepath.Rel(dir, real)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 // resolvesWithin reports whether path, with its symlinks resolved, is dir or
 // lies below it. dir must already be resolved; an empty dir admits nothing.
 func resolvesWithin(path, dir string) bool {
@@ -104,8 +114,7 @@ func resolvesWithin(path, dir string) bool {
 	if err != nil {
 		return false
 	}
-	rel, err := filepath.Rel(dir, real)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return within(real, dir)
 }
 
 // parseRule returns a rule file's body — frontmatter removed — and whether the

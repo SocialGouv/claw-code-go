@@ -2,6 +2,7 @@ package context
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,7 +70,13 @@ type MemoryOptions struct {
 	// a repository's CLAUDE.md cannot read the operator's machine into the
 	// prompt. Imports of user-scope and outer-ancestor files stay free, and
 	// with no Root all imports keep today's freedom. A workspace-scope file
-	// that is itself a symlink resolving outside Root is skipped.
+	// that is itself a symlink resolving outside Root is skipped, and so is
+	// one confined whose read loses a swap race with the check.
+	//
+	// Two limits are known: a Root spelling that does not resolve — a
+	// dangling symlink — confines nothing, indistinguishable from an unset
+	// one; and hardlinks defeat path-based confinement, since the linked
+	// file lives inside the boundary too.
 	Root string
 	// SkipWorkspace leaves out workDir's own files and the inner ancestors.
 	SkipWorkspace bool
@@ -378,16 +385,33 @@ func LoadMemory(workDir string, opts MemoryOptions) (string, map[string]int64) {
 		}
 	}
 
-	for _, c := range memoryCandidates(workDir, opts) {
+	candidates := memoryCandidates(workDir, opts)
+	for i := range candidates {
+		// Classified by location, not by the list that appended it: with
+		// HOME inside Root, a repository-seeded ~/.claude/CLAUDE.md is a
+		// workspace file, not the operator's, whichever label it carries.
+		if confined && !candidates[i].workspace && resolvesWithin(candidates[i].path, boundaryReal) {
+			candidates[i].workspace = true
+		}
+	}
+
+	for _, c := range candidates {
 		// A workspace-scope file that is itself a link out of the workspace
 		// is not loaded. It stays a discovery candidate, so re-pointing the
 		// link inside is still seen.
-		if c.workspace && confined && !resolvesWithin(c.path, boundaryReal) {
-			continue
-		}
-		data, err := os.ReadFile(c.path)
-		if err != nil {
-			continue
+		var data []byte
+		if c.workspace && confined {
+			d, ok := readWithin(c.path, boundaryReal)
+			if !ok {
+				continue
+			}
+			data = d
+		} else {
+			d, err := os.ReadFile(c.path)
+			if err != nil {
+				continue
+			}
+			data = d
 		}
 		if info, err := os.Stat(c.path); err == nil {
 			mtimes[c.path] = info.ModTime().UnixNano()
@@ -415,7 +439,7 @@ func LoadMemory(workDir string, opts MemoryOptions) (string, map[string]int64) {
 				limit = boundaryReal
 			}
 			visited := map[string]bool{c.path: true}
-			for _, imp := range expandImports(text, filepath.Dir(c.path), maxDepth, visited, mtimes, limit) {
+			for _, imp := range expandImports(text, filepath.Dir(c.path), maxDepth, visited, mtimes, limit, boundaryReal) {
 				section += "\n\n" + imp
 			}
 		}
@@ -440,11 +464,15 @@ func LoadMemory(workDir string, opts MemoryOptions) (string, map[string]int64) {
 // expandImports resolves @path references in text (relative to baseDir),
 // returning one "### Imported: <path>" block per readable target, depth-first
 // with cycle protection. Unreadable targets are silently skipped. Every file
-// read is recorded in mtimes. limit, when not empty, is a resolved directory
-// an import must resolve inside (symlinks included): targets outside it are
-// not loaded and leave no mtime behind. The limit follows the recursion, so
-// an inside file cannot lead outside.
-func expandImports(text, baseDir string, depth int, visited map[string]bool, mtimes map[string]int64, limit string) []string {
+// read is recorded in mtimes.
+//
+// limit, when not empty, is a resolved directory imports must resolve inside:
+// targets outside it are not loaded and leave no mtime behind. The boundary
+// travels with the recursion by origin: a file loaded from a confined scope
+// is confined, and so is one that resolves inside the boundary after being
+// reached from a free scope — a workspace file imported by the operator's
+// CLAUDE.md does not get to leave through its own imports.
+func expandImports(text, baseDir string, depth int, visited map[string]bool, mtimes map[string]int64, limit, boundary string) []string {
 	if depth <= 0 {
 		return nil
 	}
@@ -454,22 +482,67 @@ func expandImports(text, baseDir string, depth int, visited map[string]bool, mti
 		if path == "" || visited[path] {
 			continue
 		}
-		if limit != "" && !resolvesWithin(path, limit) {
-			continue
+		var data []byte
+		if limit != "" {
+			d, ok := readWithin(path, limit)
+			if !ok {
+				continue
+			}
+			data = d
+		} else {
+			d, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			data = d
 		}
 		visited[path] = true
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
 		if info, err := os.Stat(path); err == nil {
 			mtimes[path] = info.ModTime().UnixNano()
 		}
 		content := string(data)
 		blocks = append(blocks, fmt.Sprintf("### Imported: %s\n\n%s", path, content))
-		blocks = append(blocks, expandImports(content, filepath.Dir(path), depth-1, visited, mtimes, limit)...)
+		recLimit := limit
+		if recLimit == "" && boundary != "" && resolvesWithin(path, boundary) {
+			recLimit = boundary
+		}
+		blocks = append(blocks, expandImports(content, filepath.Dir(path), depth-1, visited, mtimes, recLimit, boundary)...)
 	}
 	return blocks
+}
+
+// readWithin reads path, swearing the bytes came from inside dir. The path is
+// resolved once and opened at its resolution — a symlink flipped afterwards
+// is never followed again — and the opened file is compared, by device and
+// inode, with what the resolution pointed at, so a file swapped in between
+// drops the content instead of leaking it.
+//
+// The window left is the one between the resolution and the open, where the
+// swap is detected rather than prevented; closing it needs openat2 with
+// RESOLVE_BENEATH, which the os package does not expose.
+func readWithin(path, dir string) ([]byte, bool) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil || !within(resolved, dir) {
+		return nil, false
+	}
+	want, err := os.Stat(resolved)
+	if err != nil || !want.Mode().IsRegular() {
+		return nil, false
+	}
+	f, err := os.Open(resolved)
+	if err != nil {
+		return nil, false
+	}
+	defer f.Close()
+	opened, err := f.Stat()
+	if err != nil || !os.SameFile(opened, want) {
+		return nil, false
+	}
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, false
+	}
+	return data, true
 }
 
 // scanImportRefs extracts @path tokens from markdown text, skipping fenced

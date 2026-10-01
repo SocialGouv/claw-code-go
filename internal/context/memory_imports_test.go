@@ -128,6 +128,88 @@ func TestMemoryOperatorImportsStayFree(t *testing.T) {
 	})
 }
 
+// Confinement travels by file origin, not by entry candidate: a workspace
+// file reached through the operator's unconfined CLAUDE.md is confined from
+// the hop it is loaded at, and cannot leave through its own imports. An
+// outside file reached the same way keeps its free imports.
+func TestMemoryImportedWorkspaceFileStaysConfined(t *testing.T) {
+	l := newImportLayout(t)
+	writeFile(t, filepath.Join(l.home, ".claude", "CLAUDE.md"),
+		"USER-BODY\n\n@"+l.root+"/CLAUDE.md\n\n@"+l.outside+"/env-esc.md\n\n@"+l.outside+"/free.md")
+	writeFile(t, filepath.Join(l.root, "CLAUDE.md"), "ROOT-BODY\n\n@"+l.outside+"/env-root.md")
+	// The free file relays through a workspace file: the relay is confined
+	// from the hop it is loaded at.
+	writeFile(t, filepath.Join(l.outside, "free.md"),
+		"OUTSIDE-FREE\n\n@"+l.outside+"/env-sub.md\n\n@"+l.root+"/shared/relay.md")
+	writeFile(t, filepath.Join(l.root, "shared", "relay.md"), "RELAY-BODY\n\n@"+l.outside+"/env-root.md")
+
+	operator := MemoryOptions{WalkUp: true, SkipWorkspace: true, Imports: true, Root: l.root}
+	got, mtimes := LoadMemory(l.workDir, operator)
+
+	for _, want := range []string{"USER-BODY", "ROOT-BODY", "OUTSIDE-FREE", "OUTSIDE-ENV-ESCAPE", "OUTSIDE-ENV-SUB", "RELAY-BODY"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%s missing:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "OUTSIDE-ENV-ROOT") {
+		t.Errorf("the imported workspace file left through its own import:\n%s", got)
+	}
+	if _, ok := mtimes[filepath.Join(l.outside, "env-root.md")]; ok {
+		t.Errorf("the workspace file's outside import was recorded as a dependency")
+	}
+}
+
+// With HOME inside Root (a container with the checkout at $HOME), a
+// repository-seeded ~/.claude/CLAUDE.md is classified by where it lives, not
+// by the list that appended it: it loads under the user label, but confined —
+// its imports stay inside Root.
+func TestMemoryHomeInsideRootIsClassifiedByLocation(t *testing.T) {
+	tmp := t.TempDir()
+	root := tmp
+	home := root
+	// A second temp directory is outside the root by construction.
+	outside := filepath.Join(t.TempDir(), "outside")
+	workDir := filepath.Join(root, "repo", "sub")
+	t.Setenv("HOME", home)
+	t.Setenv("CLAW_MEMORY_DIR", "")
+
+	writeFile(t, filepath.Join(home, ".claude", "CLAUDE.md"), "USER-INSIDE-ROOT\n\n@"+outside+"/leak.md")
+	writeFile(t, filepath.Join(outside, "leak.md"), "OUTSIDE-LEAK")
+	writeFile(t, filepath.Join(root, "repo", "CLAUDE.md"), "REPO-BODY")
+
+	// HOME is on the workDir's ancestor chain, so the file is reached as the
+	// user scope first and the ancestor second: dedup keeps the user label.
+	all := MemoryOptions{WalkUp: true, Imports: true, Root: root}
+	got, mtimes := LoadMemory(workDir, all)
+
+	if !strings.Contains(got, "## User global (~/.claude/CLAUDE.md)\n\nUSER-INSIDE-ROOT") {
+		t.Errorf("the user label changed:\n%s", got)
+	}
+	if !strings.Contains(got, "REPO-BODY") {
+		t.Errorf("REPO-BODY missing:\n%s", got)
+	}
+	if strings.Contains(got, "OUTSIDE-LEAK") {
+		t.Errorf("the repository-seeded user file imported from outside the root:\n%s", got)
+	}
+	if _, ok := mtimes[filepath.Join(outside, "leak.md")]; ok {
+		t.Errorf("the outside import was recorded as a dependency")
+	}
+
+	// The workspace policy skips the user scope, and HOME is not the workDir,
+	// so nothing of the file loads there.
+	ws := MemoryOptions{WalkUp: true, SkipUser: true, SkipOuter: true, Imports: true, Root: root}
+	if got, _ = LoadMemory(workDir, ws); strings.Contains(got, "USER-INSIDE-ROOT") {
+		t.Errorf("the workspace policy loaded the user file:\n%s", got)
+	}
+
+	// No Root: the file is the operator's again and its import is free.
+	unscoped := all
+	unscoped.Root = ""
+	if got, _ = LoadMemory(workDir, unscoped); !strings.Contains(got, "OUTSIDE-LEAK") {
+		t.Errorf("without a Root the import must load as today:\n%s", got)
+	}
+}
+
 // With no Root, imports keep today's freedom, workspace policy or not.
 func TestMemoryImportsUnchangedWithoutRoot(t *testing.T) {
 	l := newImportLayout(t)
