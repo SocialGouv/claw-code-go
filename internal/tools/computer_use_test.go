@@ -1,12 +1,14 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -69,6 +71,69 @@ func TestReadImage_RejectsLargeFile(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "5 MB") {
 		t.Errorf("expected size-limit error, got %v", err)
+	}
+}
+
+func TestReadImage_RejectsReadPastCap(t *testing.T) {
+	// The stat-size pre-check passes (declared at or under the cap) but the
+	// bytes actually read exceed it — a file grown between stat and read
+	// must not bypass the 5 MB limit.
+	_, err := readImageData(bytes.NewReader(make([]byte, maxImageBytes+1)), "grown.png")
+	if err == nil {
+		t.Fatal("expected error on read past the cap")
+	}
+	if !strings.Contains(err.Error(), "5 MB") {
+		t.Errorf("expected size-limit error, got %v", err)
+	}
+}
+
+func TestReadImage_RejectsSymlinkPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink confinement is enforced by the unix openat walk")
+	}
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real.png")
+	if err := os.WriteFile(real, pngFixture, 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	link := filepath.Join(dir, "link.png")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	// A symlinked final component is how a swap between the upstream gate's
+	// path resolution and this open would surface; it must be refused, not
+	// followed.
+	_, err := ExecuteReadImage(context.Background(), map[string]any{"path": link})
+	if err == nil {
+		t.Fatal("expected symlinked path to be refused")
+	}
+}
+
+func TestReadImage_RejectsSymlinkedDirComponent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink confinement is enforced by the unix openat walk")
+	}
+	dir := t.TempDir()
+	realDir := filepath.Join(dir, "real")
+	if err := os.Mkdir(realDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(realDir, "img.png"), pngFixture, 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	linkDir := filepath.Join(dir, "linkdir")
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	// A directory component swapped for a symlink mid-walk is the TOCTOU the
+	// openat discipline closes: the walk must refuse, not escape through it.
+	_, err := ExecuteReadImage(context.Background(), map[string]any{
+		"path": filepath.Join(linkDir, "img.png"),
+	})
+	if err == nil {
+		t.Fatal("expected path through symlinked directory to be refused")
 	}
 }
 
