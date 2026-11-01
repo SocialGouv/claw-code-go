@@ -369,7 +369,7 @@ func TestFrontmatterIsNotAHorizontalRule(t *testing.T) {
 		"---\ndescription: ship it\n---\nreal body\n": "real body\n",
 	}
 	for content, wantBody := range cases {
-		if got, _, _ := stripFrontmatter(content); got != wantBody {
+		if got, _, _, _ := stripFrontmatter(content); got != wantBody {
 			t.Errorf("stripFrontmatter(%q) body = %q, want %q", content, got, wantBody)
 		}
 	}
@@ -378,7 +378,7 @@ func TestFrontmatterIsNotAHorizontalRule(t *testing.T) {
 // Mutation: slice the description by byte and a multi-byte rune is cut in
 // half, putting invalid UTF-8 on a public API field.
 func TestDescriptionCapIsRuneSafe(t *testing.T) {
-	_, desc, _ := stripFrontmatter(strings.Repeat("é", 200) + "\n")
+	_, desc, _, _ := stripFrontmatter(strings.Repeat("é", 200) + "\n")
 	if !utf8.ValidString(desc) {
 		t.Errorf("description is not valid UTF-8: %q", desc)
 	}
@@ -562,7 +562,7 @@ func TestFrontmatterClosesOnATrailingWhitespaceDelimiter(t *testing.T) {
 		"---\ndescription: ship it\n--- \nreal body\n",
 		"---\ndescription: ship it\n---\t\nreal body\n",
 	} {
-		body, desc, _ := stripFrontmatter(content)
+		body, desc, _, _ := stripFrontmatter(content)
 		if body != "real body\n" {
 			t.Errorf("stripFrontmatter(%q) body = %q, want the frontmatter stripped", content, body)
 		}
@@ -822,13 +822,15 @@ func TestNamesWithDotsResolveWhileDotComponentsStayRefused(t *testing.T) {
 	}
 }
 
-// The frontmatter this parser throws away is surfaced, so an embedder can
-// say what it dropped instead of letting a command that narrows itself
-// (`allowed-tools:`) expand unrestricted and in silence — the one
-// divergence with a security consequence was the only invisible one.
+// `allowed-tools:` is HONORED — parsed into AllowedTools for the embedder to
+// enforce — so it leaves the discarded list; what this parser still throws
+// away is surfaced, so an embedder can say what it dropped instead of
+// letting a command that configures itself apply in silence.
 //
-// Mutation: return nil from discarded(), or stop collecting the keys — the
-// embedder's warning has nothing to name and this reddens.
+// Mutation: return nil from discardedExcept, or stop collecting the keys —
+// the embedder's warning has nothing to name and this reddens. Drop
+// "allowed-tools" from the honored set and a narrowed command expands
+// unrestricted and this reddens.
 func TestLookupWorkspaceSurfacesTheFrontmatterItDiscards(t *testing.T) {
 	ws := t.TempDir()
 	writeCommand(t, ws, "narrow.md",
@@ -838,9 +840,12 @@ func TestLookupWorkspaceSurfacesTheFrontmatterItDiscards(t *testing.T) {
 	if !ok || err != nil {
 		t.Fatalf("LookupWorkspace = (%v, %v)", ok, err)
 	}
-	want := []string{"allowed-tools", "disable-model-invocation", "model"}
+	want := []string{"disable-model-invocation", "model"}
 	if !slices.Equal(cmd.DiscardedFrontmatter, want) {
 		t.Errorf("DiscardedFrontmatter = %v, want %v", cmd.DiscardedFrontmatter, want)
+	}
+	if !slices.Equal(cmd.AllowedTools, []string{"Read", "Grep"}) {
+		t.Errorf("AllowedTools = %v, want [Read Grep]", cmd.AllowedTools)
 	}
 	// `description:` is consumed, not discarded, and must not be reported.
 	if slices.Contains(cmd.DiscardedFrontmatter, "description") {
