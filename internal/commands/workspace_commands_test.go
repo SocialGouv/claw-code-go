@@ -865,3 +865,36 @@ func TestLookupWorkspaceSurfacesTheFrontmatterItDiscards(t *testing.T) {
 		t.Errorf("DiscardedFrontmatter = %v for a description-only header, want none", plain.DiscardedFrontmatter)
 	}
 }
+
+// A DECLARED `allowed-tools:` is non-nil even when its list parses empty:
+// `allowed-tools: []` narrows to nothing, an absent key narrows nothing
+// away — conflating the two lets a file that says "no tools" silently mean
+// "all tools" (iterion#1717).
+func TestLookupWorkspaceAllowedToolsDeclaredEmptyIsNotAbsent(t *testing.T) {
+	ws := t.TempDir()
+	writeCommand(t, ws, "sealed.md", "---\ndescription: sealed\nallowed-tools: []\n---\nDo nothing.\n")
+	writeCommand(t, ws, "bare.md", "---\ndescription: bare\nallowed-tools:\n---\nDo nothing.\n")
+	writeCommand(t, ws, "open.md", "---\ndescription: open\n---\nDo anything.\n")
+
+	sealed, _, err := LookupWorkspace(ws, "sealed", 0)
+	if err != nil {
+		t.Fatalf("sealed: %v", err)
+	}
+	if sealed.AllowedTools == nil || len(sealed.AllowedTools) != 0 {
+		t.Errorf("sealed AllowedTools = %v, want a declared EMPTY list (non-nil)", sealed.AllowedTools)
+	}
+	bare, _, err := LookupWorkspace(ws, "bare", 0)
+	if err != nil {
+		t.Fatalf("bare: %v", err)
+	}
+	if bare.AllowedTools == nil || len(bare.AllowedTools) != 0 {
+		t.Errorf("bare AllowedTools = %v, want a declared EMPTY list (non-nil)", bare.AllowedTools)
+	}
+	open, _, err := LookupWorkspace(ws, "open", 0)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if open.AllowedTools != nil {
+		t.Errorf("open AllowedTools = %v, want nil — no restriction declared", open.AllowedTools)
+	}
+}
