@@ -17,8 +17,11 @@ import (
 const refusal = "honoured only by the OpenAI provider"
 
 // Options only the OpenAI provider honours are refused by every other
-// provider, so a caller relying on one of them — an egress-policy client, a
-// no-ambient-headers guarantee — learns that it did not apply.
+// provider, so a caller relying on one of them — an egress-policy client —
+// learns that it did not apply. NoAmbientHeaders is not in the table: every
+// identity-resolving provider honours it (TestAnthropicShapedProvidersThreadNoAmbientHeaders,
+// TestFoundryHonoursNoAmbientHeaders) and bedrock, which resolves none,
+// refuses it by name (TestBedrockRefusesNoAmbientHeaders).
 func TestOpenAIOnlyOptionsRefusedByOtherProviders(t *testing.T) {
 	providers := map[string]api.Provider{
 		"anthropic": anthropic.New(),
@@ -29,7 +32,6 @@ func TestOpenAIOnlyOptionsRefusedByOtherProviders(t *testing.T) {
 		"zai":       zai.New(),
 	}
 	options := map[string]api.ProviderConfig{
-		"NoAmbientHeaders":     {APIKey: "k", Model: "m", NoAmbientHeaders: true},
 		"HTTPClient":           {APIKey: "k", Model: "m", HTTPClient: &http.Client{}},
 		"OpenAIWireAPI":        {APIKey: "k", Model: "m", OpenAIWireAPI: api.OpenAIWireChat},
 		"OpenAIStreamUsage":    {APIKey: "k", Model: "m", OpenAIStreamUsage: true},
