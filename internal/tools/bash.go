@@ -41,23 +41,35 @@ const (
 // CLAW_PROC_WAIT_DELAY (a Go duration like "5s", or a bare number of
 // seconds — the same shape bashTimeout reads CLAW_BASH_TIMEOUT); unset or
 // unparsable falls back to defaultBashProcWaitDelay. 0 or negative removes
-// the bound: the escape hatch for an operator who would rather wait for a
-// descendant's last lines than lose them, with the consequence named — a
-// wedged pipe holder then parks cmd.Wait, and the call with it, for as
-// long as the holder lives.
+// the bound — os/exec arms its drain timer only for a POSITIVE WaitDelay,
+// so a negative is NORMALIZED to 0 here: passed through raw it would fire
+// the timer at once and cut every drain, the exact opposite of the
+// operator's ask (and bashTimeout's negative = unbounded, the shape this
+// mirrors). The off words the engine's ITERION_PROC_WAIT_DELAY reads
+// (off/none/unbounded) are NOT read here — claw's duration-knob idiom
+// (CLAW_BASH_TIMEOUT) is a silent default on garbage, and this knob keeps
+// it. The escape hatch's consequence, named once: a wedged pipe holder
+// then parks cmd.Wait, and the call with it, for as long as the holder
+// lives.
 func procWaitDelay() time.Duration {
 	v := strings.TrimSpace(os.Getenv("CLAW_PROC_WAIT_DELAY"))
 	if v == "" {
 		return defaultBashProcWaitDelay
 	}
 	if d, err := time.ParseDuration(v); err == nil {
+		if d < 0 {
+			return 0
+		}
 		return d
 	}
 	if n, err := strconv.Atoi(v); err == nil {
 		if int64(n) > int64(math.MaxInt64/time.Second) || int64(n) < int64(math.MinInt64/time.Second) {
 			return defaultBashProcWaitDelay
 		}
-		return time.Duration(n) * time.Second
+		if d := time.Duration(n) * time.Second; d >= 0 {
+			return d
+		}
+		return 0
 	}
 	return defaultBashProcWaitDelay
 }

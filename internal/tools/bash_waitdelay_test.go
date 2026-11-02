@@ -70,6 +70,25 @@ func TestExecuteBashWaitDelayZeroWaitsForTheDescendant(t *testing.T) {
 	}
 }
 
+// TestExecuteBashWaitDelayNegativeIsUnbounded pins the normalization:
+// os/exec arms its drain timer only for a POSITIVE WaitDelay, so a raw
+// negative would fire it at once — cutting every drain, the opposite of
+// the documented reading. Negative normalizes to 0 (unbounded, the
+// bashTimeout shape): the call waits out the descendant and answers
+// without the cut error.
+func TestExecuteBashWaitDelayNegativeIsUnbounded(t *testing.T) {
+	t.Setenv("CLAW_BASH_TIMEOUT", "")
+	t.Setenv("CLAW_PROC_WAIT_DELAY", "-3s")
+	out, err := ExecuteBash(
+		context.Background(),
+		map[string]any{"command": "sleep 1 &"},
+		permissions.ModeAllow, "",
+	)
+	if err != nil {
+		t.Fatalf("a negative bound must read as unbounded, not cut at 0s: %v (output %q)", err, out)
+	}
+}
+
 // TestExecuteBashWaitDelayDefaultSurvives pins the site default: with no
 // override the drain is still bounded (the descendant's 30s does not
 // park the call) at the site's own 2s number — overridable but never
