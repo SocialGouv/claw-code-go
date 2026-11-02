@@ -70,22 +70,28 @@ func TestExecuteBashWaitDelayZeroWaitsForTheDescendant(t *testing.T) {
 	}
 }
 
-// TestExecuteBashWaitDelayNegativeIsUnbounded pins the normalization:
-// os/exec arms its drain timer only for a POSITIVE WaitDelay, so a raw
-// negative would fire it at once — cutting every drain, the opposite of
-// the documented reading. Negative normalizes to 0 (unbounded, the
-// bashTimeout shape): the call waits out the descendant and answers
-// without the cut error.
+// TestExecuteBashWaitDelayNegativeIsUnbounded pins the normalization on
+// BOTH parse paths: os/exec arms its drain timer only for a POSITIVE
+// WaitDelay, so a raw negative would fire it at once — cutting every
+// drain, the opposite of the documented reading. Negative normalizes to
+// 0 (unbounded, the bashTimeout shape): the call waits out the
+// descendant and answers without the cut error. "-3s" exercises the
+// duration path, "-5" the bare-seconds one — dropping either path's
+// normalization reddens its case.
 func TestExecuteBashWaitDelayNegativeIsUnbounded(t *testing.T) {
-	t.Setenv("CLAW_BASH_TIMEOUT", "")
-	t.Setenv("CLAW_PROC_WAIT_DELAY", "-3s")
-	out, err := ExecuteBash(
-		context.Background(),
-		map[string]any{"command": "sleep 1 &"},
-		permissions.ModeAllow, "",
-	)
-	if err != nil {
-		t.Fatalf("a negative bound must read as unbounded, not cut at 0s: %v (output %q)", err, out)
+	for _, value := range []string{"-3s", "-5"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("CLAW_BASH_TIMEOUT", "")
+			t.Setenv("CLAW_PROC_WAIT_DELAY", value)
+			out, err := ExecuteBash(
+				context.Background(),
+				map[string]any{"command": "sleep 1 &"},
+				permissions.ModeAllow, "",
+			)
+			if err != nil {
+				t.Fatalf("a negative bound must read as unbounded, not cut at 0s: %v (output %q)", err, out)
+			}
+		})
 	}
 }
 
