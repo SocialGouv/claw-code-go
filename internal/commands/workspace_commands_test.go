@@ -898,3 +898,26 @@ func TestLookupWorkspaceAllowedToolsDeclaredEmptyIsNotAbsent(t *testing.T) {
 		t.Errorf("open AllowedTools = %v, want nil — no restriction declared", open.AllowedTools)
 	}
 }
+
+// The YAML block-list shape (`allowed-tools:` then indented `- entry`
+// lines) is the third form the reference accepts: it parses to the declared
+// list, not to a declared-empty one.
+func TestLookupWorkspaceAllowedToolsBlockList(t *testing.T) {
+	ws := t.TempDir()
+	writeCommand(t, ws, "block.md", "---\ndescription: blocked\nallowed-tools:\n  - Read\n  - Bash(git:*)\nmodel: haiku\n---\nDo the thing.\n")
+
+	cmd, ok, err := LookupWorkspace(ws, "block", 0)
+	if !ok || err != nil {
+		t.Fatalf("LookupWorkspace = (%v, %v)", ok, err)
+	}
+	if !slices.Equal(cmd.AllowedTools, []string{"Read", "Bash(git:*)"}) {
+		t.Errorf("AllowedTools = %v, want [Read Bash(git:*)]", cmd.AllowedTools)
+	}
+	// The following key is not swallowed by the lookahead.
+	if !slices.Contains(cmd.DiscardedFrontmatter, "model") {
+		t.Errorf("DiscardedFrontmatter = %v, want model named", cmd.DiscardedFrontmatter)
+	}
+	if cmd.Body != "Do the thing." {
+		t.Errorf("Body = %q, want the frontmatter stripped", cmd.Body)
+	}
+}
