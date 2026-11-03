@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"fmt"
+	"github.com/SocialGouv/claw-code-go/internal/testutil"
 	"strings"
 	"testing"
 
@@ -120,6 +121,7 @@ func BenchmarkHooksRunner_Fire_NilHandlers(b *testing.B) {
 // per-op cost is dominated by process spawn, not hook bookkeeping. Useful
 // to track regressions in env/payload assembly and the per-command loop.
 func BenchmarkHooksRunner_Fire_3Handlers(b *testing.B) {
+	testutil.IsolateShellHome(b)
 	runner := hooks.NewHookRunner(hooks.HookConfig{
 		PreToolUse: []string{"true", "true", "true"},
 	})

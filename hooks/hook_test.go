@@ -3,6 +3,7 @@ package hooks
 import (
 	"context"
 	"encoding/json"
+	"github.com/SocialGouv/claw-code-go/internal/testutil"
 	"reflect"
 	"testing"
 )
@@ -415,6 +416,7 @@ func (m *mockReporter) OnEvent(event HookProgressEvent) {
 // --- TrimSpace tests (BUGFIX-1) ---
 
 func TestRunShellCommandTrimSpace(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	// Verify that runShellCommand trims trailing whitespace from stdout/stderr.
 	result := runShellCommand(context.Background(), "echo 'hello'", nil, nil, nil)
 	if result.Stdout != "hello" {
@@ -423,6 +425,7 @@ func TestRunShellCommandTrimSpace(t *testing.T) {
 }
 
 func TestRunShellCommandTrimSpaceStderr(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	result := runShellCommand(context.Background(), "echo 'err msg' >&2 && exit 1", nil, nil, nil)
 	if result.Stderr != "err msg" {
 		t.Errorf("expected trimmed stderr 'err msg', got %q", result.Stderr)

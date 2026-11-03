@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/SocialGouv/claw-code-go/hooks"
 	"github.com/SocialGouv/claw-code-go/internal/apikit"
+	"github.com/SocialGouv/claw-code-go/internal/testutil"
 	"strings"
 	"testing"
 )
@@ -11,6 +12,7 @@ import (
 // --- BLOCKER tests: PostToolUse result handling ---
 
 func TestExecuteToolPostHookDenialEscalatesError(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	// When PostToolUse hook returns Denied, ExecuteTool must set IsError=true
 	// and merge hook messages into output.
 	loop := &ConversationLoop{
@@ -39,6 +41,7 @@ func TestExecuteToolPostHookDenialEscalatesError(t *testing.T) {
 }
 
 func TestExecuteToolPostHookFailureEscalatesError(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	// When PostToolUse hook fails (non-zero exit), escalate to isError=true.
 	loop := &ConversationLoop{
 		Config:      &Config{},
@@ -64,6 +67,7 @@ func TestExecuteToolPostHookFailureEscalatesError(t *testing.T) {
 // --- BLOCKER tests: PreToolUse IsCancelled check ---
 
 func TestExecuteToolPreHookCancelledBlocksTool(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	// When PreToolUse hook is cancelled, tool should not execute.
 	loop := &ConversationLoop{
 		Config:      &Config{},
@@ -86,6 +90,7 @@ func TestExecuteToolPreHookCancelledBlocksTool(t *testing.T) {
 // --- Pre-hook message merging on success path ---
 
 func TestExecuteToolPreHookMessagesMergedOnSuccess(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	// Pre-hook messages should be merged into successful tool output.
 	loop := &ConversationLoop{
 		Config:      &Config{},
@@ -111,6 +116,7 @@ func TestExecuteToolPreHookMessagesMergedOnSuccess(t *testing.T) {
 // --- ask_user path: post-hooks + telemetry ---
 
 func TestExecuteToolAskUserCallsPostHooks(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	// Verify that the ask_user path calls post-hooks.
 	// We use a post-hook that would set IsError if denial is returned.
 	loop := &ConversationLoop{
@@ -166,6 +172,7 @@ func TestExecuteToolAskUserCallsTelemetry(t *testing.T) {
 // --- runPostToolHooks return value ---
 
 func TestRunPostToolHooksReturnsResult(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	// Verify runPostToolHooks returns a HookRunResult, not void.
 	loop := &ConversationLoop{
 		Config: &Config{},
@@ -216,6 +223,7 @@ func TestExecuteToolNoHooksUnchangedOutput(t *testing.T) {
 // --- PreToolUse permission override extraction (Phase 3) ---
 
 func TestExecuteToolPreHookPermissionOverrideExtracted(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	// Verify that a pre-hook returning permissionDecision=allow does not
 	// break the tool execution flow. The override is extracted but not yet
 	// wired to the permission check (Phase 4).
@@ -239,6 +247,7 @@ func TestExecuteToolPreHookPermissionOverrideExtracted(t *testing.T) {
 // --- PostToolUseFailure hooks fire on error ---
 
 func TestExecuteToolErrorFiresPostToolUseFailure(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	loop := &ConversationLoop{
 		Config:      &Config{},
 		Permissions: DefaultPermissions(),
