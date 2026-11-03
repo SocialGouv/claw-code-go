@@ -104,7 +104,7 @@ func ConvertMessages(system string, messages []api.Message) []Message {
 // the model to emit tool_use calls for an undeclared name, which derails
 // the conversation when the runtime can't dispatch them.
 //
-// We normalise the schema before marshalling because OpenAI's function
+// We normalise Go-built schemas before marshalling because OpenAI's function
 // validator rejects null for fields it expects as arrays/objects:
 //   - omit `required` when nil or empty (a nil []string would marshal
 //     as JSON null and OpenAI errors with "None is not of type 'array'")
@@ -132,8 +132,8 @@ func ConvertTools(provider string, tools []api.Tool) ([]Tool, error) {
 	return result, nil
 }
 
-// NormalizedParameters marshals an InputSchema into an OpenAI-function
-// `parameters` object, normalising the three shapes OpenAI's validator (both
+// NormalizedParameters passes received schemas through verbatim. For Go-built
+// schemas it normalises the three shapes OpenAI's validator (both
 // /chat/completions and /responses) rejects as `null`:
 //   - `required` is OMITTED when nil/empty — a nil []string marshals to JSON
 //     null and OpenAI errors "None is not of type 'array'". This is the shape
@@ -147,6 +147,9 @@ func ConvertTools(provider string, tools []api.Tool) ([]Tool, error) {
 // Both the chat and responses tool converters route through this so the
 // normalisation can never drift between the two OpenAI transports.
 func NormalizedParameters(schema api.InputSchema) (json.RawMessage, error) {
+	if schema.Raw != nil {
+		return MarshalJSON(schema)
+	}
 	schemaType := schema.Type
 	if schemaType == "" {
 		schemaType = "object"
@@ -168,7 +171,7 @@ func NormalizedParameters(schema api.InputSchema) (json.RawMessage, error) {
 	if len(schema.Defs) > 0 {
 		out["$defs"] = schema.Defs
 	}
-	params, err := json.Marshal(out)
+	params, err := MarshalJSON(out)
 	if err != nil {
 		return nil, err
 	}

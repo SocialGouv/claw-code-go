@@ -191,17 +191,18 @@ func (c *Client) applyAuth(ctx context.Context, req *http.Request) error {
 // max_tokens so it can be omitted.
 
 type oaiRequest struct {
-	Messages         []openaiwire.Message   `json:"messages"`
-	Tools            []openaiwire.Tool      `json:"tools,omitempty"`
-	Stream           bool                   `json:"stream"`
-	StreamOptions    *openaiwire.StreamOpts `json:"stream_options,omitempty"`
-	MaxTokens        *int                   `json:"max_tokens,omitempty"`
-	Temperature      *float64               `json:"temperature,omitempty"`
-	TopP             *float64               `json:"top_p,omitempty"`
-	FrequencyPenalty *float64               `json:"frequency_penalty,omitempty"`
-	PresencePenalty  *float64               `json:"presence_penalty,omitempty"`
-	Stop             []string               `json:"stop,omitempty"`
-	ReasoningEffort  string                 `json:"reasoning_effort,omitempty"`
+	Messages         []openaiwire.Message       `json:"messages"`
+	Tools            []openaiwire.Tool          `json:"tools,omitempty"`
+	ResponseFormat   *openaiwire.ResponseFormat `json:"response_format,omitempty"`
+	Stream           bool                       `json:"stream"`
+	StreamOptions    *openaiwire.StreamOpts     `json:"stream_options,omitempty"`
+	MaxTokens        *int                       `json:"max_tokens,omitempty"`
+	Temperature      *float64                   `json:"temperature,omitempty"`
+	TopP             *float64                   `json:"top_p,omitempty"`
+	FrequencyPenalty *float64                   `json:"frequency_penalty,omitempty"`
+	PresencePenalty  *float64                   `json:"presence_penalty,omitempty"`
+	Stop             []string                   `json:"stop,omitempty"`
+	ReasoningEffort  string                     `json:"reasoning_effort,omitempty"`
 }
 
 // ----- buildRequest ----------------------------------------------------------
@@ -220,6 +221,7 @@ func (c *Client) buildRequest(req api.CreateMessageRequest) ([]byte, error) {
 	r := oaiRequest{
 		Messages:         openaiwire.ConvertMessages(req.System, req.Messages),
 		Tools:            tools,
+		ResponseFormat:   req.ResponseFormat,
 		Stream:           true,
 		StreamOptions:    &openaiwire.StreamOpts{IncludeUsage: true},
 		Temperature:      req.Temperature,
@@ -232,7 +234,7 @@ func (c *Client) buildRequest(req api.CreateMessageRequest) ([]byte, error) {
 	if maxTokens > 0 {
 		r.MaxTokens = &maxTokens
 	}
-	return json.Marshal(r)
+	return openaiwire.MarshalJSON(r)
 }
 
 // ----- StreamResponse --------------------------------------------------------

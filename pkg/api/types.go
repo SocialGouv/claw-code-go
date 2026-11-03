@@ -36,6 +36,12 @@ type Property = api.Property
 // ToolChoice controls which tool the model must use.
 type ToolChoice = api.ToolChoice
 
+// ResponseFormat opts into native output on OpenAI-compatible routes.
+type ResponseFormat = api.ResponseFormat
+
+// ResponseFormatJSONSchema carries a raw schema and an explicit strict choice.
+type ResponseFormatJSONSchema = api.ResponseFormatJSONSchema
+
 // CreateMessageRequest is the request body for /v1/messages.
 type CreateMessageRequest = api.CreateMessageRequest
 

@@ -1,6 +1,7 @@
 package openaiwire
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -57,4 +58,22 @@ func TestNormalizedParameters(t *testing.T) {
 			t.Errorf("required lost: %s", p)
 		}
 	})
+}
+
+// Received schemas own their shape, including omitted keywords and explicit
+// empty collections. Only Go-built schemas use the historical defaults.
+func TestNormalizedParameters_ReceivedSchemaIsVerbatim(t *testing.T) {
+	for _, input := range []string{`{}`, `{"properties":{},"required":[]}`, `{"type":"object","additionalProperties":false}`, `false`} {
+		var schema api.InputSchema
+		if err := json.Unmarshal([]byte(input), &schema); err != nil {
+			t.Fatal(err)
+		}
+		got, err := NormalizedParameters(schema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != input {
+			t.Errorf("received schema changed: got %s, want %s", got, input)
+		}
+	}
 }
