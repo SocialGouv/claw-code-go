@@ -3,12 +3,14 @@ package hooks
 import (
 	"context"
 	"errors"
+	"github.com/SocialGouv/claw-code-go/internal/testutil"
 	"runtime"
 	"testing"
 	"time"
 )
 
 func TestRunPreToolUseCancelPropagatesToShellHook(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("relies on POSIX sleep")
 	}
@@ -33,6 +35,7 @@ func TestRunPreToolUseCancelPropagatesToShellHook(t *testing.T) {
 }
 
 func TestRunPreToolUseAlreadyCancelled(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	runner := NewHookRunner(HookConfig{PreToolUse: []string{"echo hi"}})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -45,6 +48,7 @@ func TestRunPreToolUseAlreadyCancelled(t *testing.T) {
 }
 
 func TestRunPostToolUseCancelPropagatesToShellHook(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("relies on POSIX sleep")
 	}

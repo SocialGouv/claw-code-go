@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/SocialGouv/claw-code-go/hooks"
 	"github.com/SocialGouv/claw-code-go/internal/apikit"
+	"github.com/SocialGouv/claw-code-go/internal/testutil"
 	"github.com/SocialGouv/claw-code-go/plugin"
 	"strings"
 	"testing"
@@ -62,6 +63,7 @@ func TestExecuteToolPluginDispatch(t *testing.T) {
 }
 
 func TestExecuteToolPluginPostHooksRun(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	// Post-hooks should run for plugin tool execution.
 	registry := newPluginRegistryWithTool("my_plugin_tool", "ok")
 

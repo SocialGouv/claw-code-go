@@ -7,6 +7,7 @@ import (
 	"github.com/SocialGouv/claw-code-go/internal/api"
 	"github.com/SocialGouv/claw-code-go/internal/hooks/hookstesting"
 	"github.com/SocialGouv/claw-code-go/internal/permissions"
+	"github.com/SocialGouv/claw-code-go/internal/testutil"
 	"strings"
 	"testing"
 )
@@ -202,6 +203,7 @@ func TestLoopAdapter_BuildInfo_ViaLoop(t *testing.T) {
 // --- WIRE-HOOK-PERM-OVERRIDE: Hook permission override tests ---
 
 func TestExecuteTool_HookPermissionDeny(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	deny := hooks.PermissionDeny
 	loop := &ConversationLoop{
 		Permissions: DefaultPermissions(),
@@ -221,6 +223,7 @@ func TestExecuteTool_HookPermissionDeny(t *testing.T) {
 // QUALITY-1: Hook "allow" with a matching ask-rule should NOT remember
 // as auto-allowed. The ask-rule must take precedence, matching Rust semantics.
 func TestExecuteTool_HookAllowRespectsAskRules(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	allow := hooks.PermissionAllow
 
 	// Create a manager with an ask-rule that matches "bash".
@@ -252,6 +255,7 @@ func TestExecuteTool_HookAllowRespectsAskRules(t *testing.T) {
 
 // QUALITY-1: Hook "allow" WITHOUT a matching ask-rule should remember as allowed.
 func TestExecuteTool_HookAllowRemembersWithoutAskRule(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	allow := hooks.PermissionAllow
 
 	// Manager with no ask-rules.
@@ -275,6 +279,7 @@ func TestExecuteTool_HookAllowRemembersWithoutAskRule(t *testing.T) {
 
 // QUALITY-2: Hook "ask" should not auto-allow (falls through to normal check).
 func TestExecuteTool_HookAskDoesNotAutoAllow(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	ask := hooks.PermissionAsk
 
 	mgr := permissions.NewManager(permissions.ModeDefault, &permissions.Ruleset{})

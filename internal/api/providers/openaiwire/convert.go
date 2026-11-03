@@ -162,6 +162,12 @@ func NormalizedParameters(schema api.InputSchema) (json.RawMessage, error) {
 	if len(schema.Required) > 0 {
 		out["required"] = schema.Required
 	}
+	// Properties may reference these definitions, including recursively.
+	// Keeping only the properties would leave dangling references on both
+	// OpenAI transports even though InputSchema preserved the full graph.
+	if len(schema.Defs) > 0 {
+		out["$defs"] = schema.Defs
+	}
 	params, err := json.Marshal(out)
 	if err != nil {
 		return nil, err

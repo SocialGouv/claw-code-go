@@ -2,6 +2,7 @@ package hookstesting
 
 import (
 	"context"
+	"github.com/SocialGouv/claw-code-go/internal/testutil"
 	"testing"
 
 	"github.com/SocialGouv/claw-code-go/hooks"
@@ -19,6 +20,7 @@ func TestNewHookRunnerWithOverride_Nil(t *testing.T) {
 }
 
 func TestNewHookRunnerWithOverride_Allow(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	allow := hooks.PermissionAllow
 	runner := NewHookRunnerWithOverride(&allow, "test reason")
 	if runner == nil {
@@ -37,6 +39,7 @@ func TestNewHookRunnerWithOverride_Allow(t *testing.T) {
 }
 
 func TestNewHookRunnerWithOverride_Deny(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	deny := hooks.PermissionDeny
 	runner := NewHookRunnerWithOverride(&deny, "blocked")
 	result := runner.RunPreToolUse(context.Background(), "bash", `{"command":"rm -rf /"}`)
@@ -46,6 +49,7 @@ func TestNewHookRunnerWithOverride_Deny(t *testing.T) {
 }
 
 func TestNewHookRunnerWithOverride_Ask(t *testing.T) {
+	testutil.IsolateShellHome(t)
 	ask := hooks.PermissionAsk
 	runner := NewHookRunnerWithOverride(&ask, "needs confirmation")
 	result := runner.RunPreToolUse(context.Background(), "bash", `{"command":"echo"}`)
