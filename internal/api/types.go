@@ -173,6 +173,10 @@ type InputSchema struct {
 	Type       string              `json:"type"`
 	Properties map[string]Property `json:"properties"`
 	Required   []string            `json:"required,omitempty"`
+	// Defs carries the root definitions referenced by named properties.
+	// References remain JSON pointers on the wire, including recursive ones;
+	// the carrier does not resolve or expand the schema graph.
+	Defs map[string]Property `json:"$defs,omitempty"`
 }
 
 // Property is a single JSON schema property definition.
@@ -191,7 +195,11 @@ type InputSchema struct {
 // under any of the given schemas`. Anthropic's validator accepted the
 // malformed shape, which is why this only surfaced on OpenAI calls.
 type Property struct {
-	Type string `json:"type,omitempty"`
+	// Ref preserves a reference wherever a property can appear: directly,
+	// in array items, or in a root definition. Nil means absent; a present
+	// empty URI refers to the current resource and must remain present.
+	Ref  *string `json:"$ref,omitempty"`
+	Type string  `json:"type,omitempty"`
 	// Types keeps a JSON Schema `type` given as an array of alternatives
 	// (`["array","null"]`, or the six-kind union a schema generator emits for
 	// an untyped field). Type then holds the first non-null alternative so
