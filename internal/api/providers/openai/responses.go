@@ -315,7 +315,8 @@ func (c *Client) streamResponses(ctx context.Context, req api.CreateMessageReque
 // ----- Request conversion ---------------------------------------------------
 
 func (c *Client) buildResponsesRequest(req api.CreateMessageRequest) (*oaiResponsesRequest, error) {
-	if err := req.ResponseFormat.Validate(); err != nil {
+	format, err := req.ResponseFormat.Normalized()
+	if err != nil {
 		return nil, err
 	}
 	model := c.requestModel(req)
@@ -371,12 +372,12 @@ func (c *Client) buildResponsesRequest(req api.CreateMessageRequest) (*oaiRespon
 	if req.ToolChoice != nil {
 		r.ToolChoice = convertToolChoiceToResponses(req.ToolChoice)
 	}
-	if req.ResponseFormat != nil {
-		format := oaiTextFormat{Type: req.ResponseFormat.Type}
+	if format != nil {
+		textFormat := oaiTextFormat{Type: format.Type}
 		if format.Type == "json_schema" {
-			format.ResponseFormatJSONSchema = req.ResponseFormat.JSONSchema
+			textFormat.ResponseFormatJSONSchema = format.JSONSchema
 		}
-		r.Text = &oaiTextConfig{Format: format}
+		r.Text = &oaiTextConfig{Format: textFormat}
 	}
 
 	return r, nil

@@ -11,7 +11,7 @@ func TestSchemaRepairsOnWire(t *testing.T) {
 	for _, mode := range []string{"default"} {
 		_ = mode
 		cases := []struct{ name, input, want string }{
-			{"null-keywords", `{"type":"object","properties":{"n":{"description":null,"enum":null,"items":null,"const":null,"default":null,"examples":null},"e":{"enum":[null,{"description":null}]}},"required":null,"allOf":[{"description":null}],"$defs":{"x":{"items":null}},"x-custom":{"description":null}}`, `{"type":"object","properties":{"n":{"const":null,"default":null,"examples":null},"e":{"enum":[null,{"description":null}]}},"allOf":[{}],"$defs":{"x":{}},"x-custom":{"description":null}}`},
+			{"null-keywords", `{"type":"object","properties":{"n":{"description":null,"enum":null,"items":null,"const":null,"default":null,"examples":null},"e":{"enum":[null,{"description":null}]}},"required":null,"allOf":[{"description":null}],"$defs":{"x":{"items":null}},"x-custom":{"description":null}}`, `{"type":"object","properties":{"n":{"const":null,"default":null,"items":{}},"e":{"enum":[null,{"description":null}]}},"allOf":[{}],"$defs":{"x":{"items":{}}},"x-custom":{"description":null}}`},
 			{"utf8", "{\"type\":\"object\",\"properties\":{},\"pattern\":\"\xff\xfe\"}", `{"type":"object","properties":{},"pattern":"\ufffd\ufffd"}`},
 		}
 		for _, tc := range cases {

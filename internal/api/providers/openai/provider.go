@@ -311,7 +311,8 @@ func (c *Client) StreamResponse(ctx context.Context, req api.CreateMessageReques
 // ----- Request conversion ----------------------------------------------------
 
 func (c *Client) buildRequest(req api.CreateMessageRequest) (*oaiRequest, error) {
-	if err := req.ResponseFormat.Validate(); err != nil {
+	format, err := req.ResponseFormat.Normalized()
+	if err != nil {
 		return nil, err
 	}
 	model := c.requestModel(req)
@@ -341,7 +342,7 @@ func (c *Client) buildRequest(req api.CreateMessageRequest) (*oaiRequest, error)
 		Model:            wireModel,
 		Messages:         openaiwire.ConvertMessages(req.System, req.Messages),
 		Tools:            tools,
-		ResponseFormat:   req.ResponseFormat,
+		ResponseFormat:   format,
 		Stream:           true,
 		MaxTokens:        maxTokens,
 		Temperature:      req.Temperature,

@@ -205,34 +205,24 @@ func ConvertToolChoice(tc *api.ToolChoice) any {
 	return nil
 }
 
-// normalizeReceivedRoot changes only missing/null root defaults. Nested schema
-// keywords and numbers remain RawMessages; no typed reconstruction occurs.
+// normalizeReceivedRoot supplies the OpenAI tool-root defaults AFTER shared
+// schema normalization. Null/empty keyword repairs belong to that one helper.
 func normalizeReceivedRoot(raw json.RawMessage) (json.RawMessage, error) {
 	trimmed := bytes.TrimSpace(raw)
-	var root map[string]json.RawMessage
-	if !bytes.Equal(trimmed, []byte("null")) && (len(trimmed) == 0 || trimmed[0] != '{') {
-		return nil, &api.RequestValidationError{Field: "InputSchema", Reason: "root must be a JSON object (or null for an empty schema)"}
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return nil, &api.RequestValidationError{Field: "InputSchema", Reason: "root must be a JSON object"}
 	}
+	var root map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &root); err != nil {
 		return nil, err
 	}
-	changed := root == nil
-	if root == nil {
-		root = map[string]json.RawMessage{}
-	}
-	isNull := func(value json.RawMessage) bool {
-		return len(value) == 0 || bytes.Equal(bytes.TrimSpace(value), []byte("null"))
-	}
-	if typ := root["type"]; isNull(typ) || bytes.Equal(bytes.TrimSpace(typ), []byte(`""`)) {
+	changed := false
+	if _, ok := root["type"]; !ok {
 		root["type"] = json.RawMessage(`"object"`)
 		changed = true
 	}
-	if isNull(root["properties"]) {
+	if _, ok := root["properties"]; !ok {
 		root["properties"] = json.RawMessage(`{}`)
-		changed = true
-	}
-	if value, ok := root["required"]; ok && isNull(value) {
-		delete(root, "required")
 		changed = true
 	}
 	if !changed {

@@ -10,6 +10,8 @@ import (
 
 func TestResponseFormatValidation(t *testing.T) {
 	formats := []*api.ResponseFormat{
+		{Type: "json_schema", JSONSchema: &api.ResponseFormatJSONSchema{Name: "bad", Schema: []byte(`{"type":`)}},
+		{Type: "json_schema", JSONSchema: &api.ResponseFormatJSONSchema{Name: "bad", Schema: []byte("{\"description\":\"\xff\"}")}},
 		{}, {Type: "xml"}, {Type: "json_schema"},
 		{Type: "json_schema", JSONSchema: &api.ResponseFormatJSONSchema{Schema: []byte(`{}`)}},
 		{Type: "json_schema", JSONSchema: &api.ResponseFormatJSONSchema{Name: "answer"}},

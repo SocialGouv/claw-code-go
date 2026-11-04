@@ -122,14 +122,76 @@ func TestSchemaPropertyNullKeywords(t *testing.T) {
 	if err := json.Unmarshal(got, &root); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"description", "items", "enum"} {
+	for _, key := range []string{"description", "enum"} {
 		if _, ok := root.Properties["p"][key]; ok {
 			t.Errorf("null keyword %s survived: %s", key, got)
 		}
 	}
+	if string(root.Properties["p"]["items"]) != "{}" {
+		t.Error("null child schema must become {}")
+	}
 	for _, key := range []string{"const", "default", "examples", "x-extension"} {
 		if _, ok := root.Properties["p"][key]; !ok {
 			t.Errorf("instance data %s lost: %s", key, got)
+		}
+	}
+}
+
+// Each public boundary and manually assigned Raw must pass the ONE shared
+// UTF-8 choke point. Checking Raw itself prevents a later marshal masking a
+// missing decode-time normalization.
+func TestSchemaRawNormalizationBoundaries(t *testing.T) {
+	bad := []byte("{\"description\":\"\xff\xfe\",\"required\":null}")
+	var s InputSchema
+	var p Property
+	for _, v := range []any{&s, &p} {
+		if err := json.Unmarshal(bad, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, raw := range [][]byte{s.Raw, p.Raw} {
+		if !utf8.Valid(raw) || bytes.Contains(raw, []byte(`"required"`)) {
+			t.Errorf("Raw not normalized: %q", raw)
+		}
+	}
+	for _, v := range []any{InputSchema{Raw: bad}, Property{Raw: bad}} {
+		out, err := json.Marshal(v)
+		if err != nil || !utf8.Valid(out) || bytes.Contains(out, []byte(`"required"`)) {
+			t.Errorf("manual Raw: %q, %v", out, err)
+		}
+	}
+	// A snapshot comparison must notice in-place writes as well as replacement.
+	for _, v := range []any{&s, &p} {
+		if err := json.Unmarshal([]byte(`{"minimum":0}`), v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.Raw[11] = 'x'
+	p.Raw[11] = 'x'
+	for _, v := range []any{s, p} {
+		if _, err := json.Marshal(v); err == nil {
+			t.Errorf("stale cache accepted changed Raw: %T", v)
+		}
+	}
+}
+
+func TestSchemaNumberLexemes(t *testing.T) {
+	raw := []byte(`{"description":null,"minimum":-1.20e+3,"maximum":9007199254740993,"multipleOf":1e-400,"default":123456789012345678901234567890}`)
+	var s InputSchema
+	if err := json.Unmarshal(raw, &s); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"-1.20e+3", "9007199254740993", "1e-400", "123456789012345678901234567890"} {
+		if !bytes.Contains(s.Raw, []byte(n)) {
+			t.Errorf("numeric lexeme lost: %s", s.Raw)
+		}
+	}
+	for _, tc := range []struct {
+		n             string
+		integer, want bool
+	}{{"1e1000000000", true, true}, {"1e-1000000000", true, false}, {"1e-1000000000", false, true}, {"-0", true, true}, {"0", false, false}, {"1.20e1", true, true}, {"1.20", true, false}} {
+		if got := numberIs(json.Number(tc.n), tc.integer); got != tc.want {
+			t.Errorf("numberIs(%s,%v)=%v", tc.n, tc.integer, got)
 		}
 	}
 }

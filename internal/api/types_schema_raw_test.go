@@ -9,7 +9,7 @@ import (
 func TestSchemaRawRoundTrip(t *testing.T) {
 	for _, input := range []string{
 		`{"additionalProperties":false,"type":"object","properties":{"n":{"type":"integer","minimum":0,"maximum":100}},"required":["n"]}`,
-		`{"properties":{"allow":true,"deny":false,"tuple":{"type":"array","items":[{"type":"string"},{"type":"integer"}],"additionalItems":false}}}`,
+		`{"properties":{"allow":true,"deny":false,"tuple":{"type":"array","prefixItems":[{"type":"string"},{"type":"integer"}],"items":false}}}`,
 		`{"type":["object","null"],"$defs":{"node":{"$ref":"#/$defs/node"}},"unevaluatedProperties":false}`,
 		`{"enum":[9007199254740993,1.20e+3],"pattern":"\\u0041"}`,
 		`{}`, `true`, `false`,

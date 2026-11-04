@@ -167,7 +167,7 @@ func RefuseOpenAIOnlyOptions(provider string, cfg ProviderConfig) error {
 // capabilities. Unsupported native output must never silently fall back to text.
 func RefuseOpenAIOnlyRequestOptions(provider string, req CreateMessageRequest) error {
 	if req.ResponseFormat != nil {
-		return &RequestValidationError{Field: "ResponseFormat", Reason: provider + " does not support native response formats; use an OpenAI or Foundry transport"}
+		return &RequestValidationError{Field: "ResponseFormat", Reason: provider + " API has no native response_format field and claw does not translate ResponseFormat to its structured-output mechanism; use an OpenAI or Foundry transport"}
 	}
 	return nil
 }

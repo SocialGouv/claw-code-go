@@ -208,7 +208,8 @@ type oaiRequest struct {
 // ----- buildRequest ----------------------------------------------------------
 
 func (c *Client) buildRequest(req api.CreateMessageRequest) ([]byte, error) {
-	if err := req.ResponseFormat.Validate(); err != nil {
+	format, err := req.ResponseFormat.Normalized()
+	if err != nil {
 		return nil, err
 	}
 	maxTokens := req.MaxTokens
@@ -224,7 +225,7 @@ func (c *Client) buildRequest(req api.CreateMessageRequest) ([]byte, error) {
 	r := oaiRequest{
 		Messages:         openaiwire.ConvertMessages(req.System, req.Messages),
 		Tools:            tools,
-		ResponseFormat:   req.ResponseFormat,
+		ResponseFormat:   format,
 		Stream:           true,
 		StreamOptions:    &openaiwire.StreamOpts{IncludeUsage: true},
 		Temperature:      req.Temperature,
