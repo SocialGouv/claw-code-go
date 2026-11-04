@@ -2,7 +2,8 @@
 
 `pkg/api.InputSchema` and `pkg/api.Property` normalize received schemas at the
 public `json.Unmarshal` boundary and store the result in `Raw`. A single
-`UseNumber` decode feeds both the shared cleanup and the typed read accessors.
+`UseNumber` token decode records object order and feeds both the shared cleanup
+and the typed read accessors.
 Only the public root retains raw bytes. Marshal reuses the cleaned bytes when
 an immutable snapshot matches `Raw`; replacing or editing `Raw` in place
 triggers the same cleanup. Decode, retained memory and marshal scale with the
@@ -13,6 +14,9 @@ bytes become individual U+FFFD characters at this shared boundary. Decoding
 The offline guarantee test validates the **serialized tool schema** on
 Anthropic, Bedrock and Vertex against the embedded JSON Schema draft 2020-12
 meta-schema using `github.com/santhosh-tekuri/jsonschema/v6` (test imports only).
+Every corpus output is also compiled with a loader that refuses network access,
+including cases without instance witnesses, so dangling local references fail.
+Custom dialect fixtures supply their meta-schema explicitly as a local resource.
 It covers legacy forms, every schema position, a cross-product of standard
 keyword shapes, and actual FastMCP/OpenAPI 3.0, zod/openApi3, TypeBox,
 `google/jsonschema-go` and Playwright MCP output. Expected trees and accepted
@@ -26,13 +30,14 @@ for every tool transport, and for native response schemas:
 | Received form | Output and semantics |
 | --- | --- |
 | Boolean `exclusiveMinimum` / `exclusiveMaximum` | `true` plus a numeric inclusive bound moves that exact number to the exclusive keyword and removes the inclusive one. `false` disappears, keeping the inclusive bound. An orphan boolean disappears: it supplies no bound. Numeric exclusive bounds are unchanged. |
-| Tuple `items: [...]` plus `additionalItems` | `prefixItems` plus `items`, preserving positional and tail constraints. An empty tuple becomes only its tail constraint. Mixed modern constraints are intersected through `allOf`. |
+| Tuple `items: [...]` plus `additionalItems` | `prefixItems` plus `items`, preserving positional and tail constraints. An empty tuple becomes only its tail constraint. Mixed modern constraints are intersected through `allOf`. A surviving `prefixItems` without a tail gets `items: {}`, equivalent to an absent tail and required by OpenAI-compatible endpoints. |
 | `dependencies` arrays / schemas | `dependentRequired` / `dependentSchemas`. Colliding modern declarations are conjoined through `allOf`, preserving both constraints. |
-| Local JSON Pointer references into migrated positions | Rewritten to the new tuple/dependency position, with pointer escaping and local `$id` resource scopes preserved. External resources are never loaded or expanded. |
+| Local JSON Pointer references into migrated positions | Rewritten to the new tuple/dependency position, with pointer escaping and local `$id` resource scopes preserved. Pointers into colliding modern declarations moved into `allOf` are also rewritten. External resources are never loaded or expanded. |
 | `definitions` | Kept and recursively cleaned, preserving existing `#/definitions/...` references. The 2020-12 meta-schema permits it. |
-| Old standard `$schema` declaration | Replaced with `https://json-schema.org/draft/2020-12/schema` after conversion. Explicit draft-04/06/07 `$ref` validation siblings remain ignored as in the source dialect. |
-| Draft-04 `id` | Becomes `$id`; representable fragments become `$anchor`. Existing modern identifiers take precedence. |
-| OpenAPI 3.0 `nullable: true` | Adds `null` to an explicit scalar `type`. It does **not** bypass `enum`, `const` or other constraints. Without an explicit type it has no effect. `nullable: false` disappears. |
+| Old standard `$schema` declaration | Replaced with `https://json-schema.org/draft/2020-12/schema` after conversion. Explicit draft-04/06/07 `$ref` validation siblings (including `const`) and sibling `id`/`$id` remain ignored as in the source dialect. Definition containers and annotations such as `description` survive. |
+| Draft-04 `id` | Becomes `$id` only under draft-04 or without a declared dialect; representable fragments become `$anchor`. With other declared dialects, `id` stays an annotation. Existing modern identifiers take precedence. |
+| Draft-06/07 `$id: "base#name"` | Split into `$id: "base"` and `$anchor: "name"`; an anchor-only identifier creates no new resource scope. Also supported without a declared dialect. |
+| OpenAPI 3.0 `nullable: true` | Without a declared JSON Schema dialect, adds `null` to an explicit scalar `type`. It does **not** bypass `enum`, `const` or other constraints. Without an explicit type it has no effect. `nullable: false` disappears. |
 | Null child in a schema position | Becomes `{}` in maps, arrays and single-schema keywords, including `not`, conditional branches and unevaluated keywords. |
 | Wrong container / keyword type | Retained when permitted by 2020-12, otherwise removed. Invalid schema members become `{}`. Empty `anyOf`/`oneOf` remain unsatisfiable via `not: {}`; empty `allOf`/`prefixItems` disappear. |
 | Non-array `examples`, including null | Removed; this loses an annotation, not a validation constraint. Array elements remain instance data. |
@@ -47,8 +52,8 @@ their reference target; invalid modern `$id` fragments are omitted. Unsupported
 legacy vocabulary semantics (for example a boolean `$recursiveAnchor`) are
 not a complete dialect migration and may be lost when they violate 2020-12.
 These losses are documented beside the cleanup in production code as well.
-The guarantee is meta-schema conformance, not automatic acceptance by every
-endpoint's supported subset, resolution of external references, or validation
+The corpus guarantee covers meta-schema conformance and offline reference
+resolution, not automatic acceptance by every endpoint's supported subset, resolution of external references, or validation
 of generated output.
 
 The dialect decision follows the role of [`$schema` as the dialect identifier
@@ -60,9 +65,13 @@ The nullable rule follows [OpenAPI 3.0.3 §4.7.24.2](https://spec.openapis.org/o
 
 Instance data in `const`, `default`, array-valued `examples` and `enum`, and
 unknown extensions, is untouched by schema traversal. Number lexemes retain
-precision and exponent spelling. An unchanged valid schema keeps its bytes;
-rewriting may reorder keys and re-encode string escapes without changing their
-values. With nonempty `Raw`, edits to typed fields do not change serialization.
+precision and exponent spelling. An unchanged valid schema keeps its bytes.
+Rewriting preserves the relative order of original object keys, including `properties` used by structured output,
+moved schemas and opaque instance data; synthesized keys are appended
+deterministically. String escapes may be re-encoded without changing their
+values. Adding an unconstrained `items: {}` is a deliberate wire compatibility
+change even for an otherwise valid 2020-12 schema. With nonempty `Raw`, edits to
+typed fields do not change serialization.
 Decode a replacement to update both views, or edit `Raw` if no typed view is
 needed. Clearing `Raw` opts into the typed view and discards keywords outside
 that view throughout the decoded tree. A separately decoded `Property` owns

@@ -25,7 +25,18 @@ accepted and rejected instances. The Go helper additionally crosses **all
 2020-12 keyword shapes** with scalar/container/null values. Each provider test
 checks its actual serialized `input_schema` against
 `https://json-schema.org/draft/2020-12/schema`, regardless of the source's
-`$schema` value. Instance witnesses compile the converted schema separately.
+`$schema` value. Every emitted schema is also compiled, even without instances;
+the loader rejects any resource not embedded or explicitly supplied by the case.
+Valid URI strings in the shape sweep point to local definitions or the standard
+meta-schema. The custom dialect cases register their fixture meta-schema.
+
+`r3-cases.json` contains the round-3 reference, collision, dialect and open-tail
+witnesses, including all 12 formerly surviving mutations (MA, MB, MD, ME, MF,
+MG, MK, ML, MP, MW, MX, MY). C1/C1b/C2/C2b/C4 deliberately have no instance
+witnesses: compilation alone must detect their formerly dangling references.
+The dependencies-collision case also rejects instances violating only the modern
+half. OpenAI tests separately capture chat and Responses bodies for tuple tails
+and property ordering; no provider is contacted.
 
 Sources:
 

@@ -15,11 +15,11 @@ import (
 // decodeSchemaJSON is the single UTF-8 and JSON decoding choke point for raw
 // tool schemas, including Raw assigned by hand. UseNumber preserves numeric
 // lexemes; a single tree walk avoids re-decoding every descendant's subtree.
-func decodeSchemaJSON(raw []byte) (any, error) {
+func decodeSchemaJSON(raw []byte, root *schemaPath) (any, error) {
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.UseNumber()
-	var v any
-	if err := d.Decode(&v); err != nil {
+	v, err := decodeOrderedSchema(d, root)
+	if err != nil {
 		return nil, err
 	}
 	if err := d.Decode(new(any)); err != io.EOF {
@@ -35,7 +35,8 @@ func decodeSchemaJSON(raw []byte) (any, error) {
 // examples/enum members or unknown extensions. Unchanged UTF-8 schemas keep
 // their exact bytes. encoding/json replaces each invalid UTF-8 byte with U+FFFD.
 func normalizedSchemaJSON(raw []byte) (any, json.RawMessage, error) {
-	v, err := decodeSchemaJSON(raw)
+	root := &schemaPath{}
+	v, err := decodeSchemaJSON(raw, root)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -45,13 +46,12 @@ func normalizedSchemaJSON(raw []byte) (any, json.RawMessage, error) {
 		return nil, nil, &RequestValidationError{Field: "InputSchema", Reason: "root must be a JSON object or boolean schema"}
 	}
 	cleaner := schemaCleaner{}
-	root := &schemaPath{}
-	v, changed := cleaner.clean(v, root, root, false)
+	v, changed := cleaner.clean(v, root, root, false, "")
 	changed = cleaner.rewriteReferences() || changed
 	if !changed && utf8.Valid(raw) {
 		return v, raw, nil
 	}
-	out, err := marshalSchemaJSON(v)
+	out, err := marshalOrderedSchema(v, root)
 	return v, out, err
 }
 func cleanSchemaJSON(raw json.RawMessage) (json.RawMessage, error) {
@@ -65,7 +65,7 @@ func cleanSchemaJSON(raw json.RawMessage) (json.RawMessage, error) {
 // $recursiveAnchor. This is shape normalization, not a complete dialect engine.
 // Empty anyOf/oneOf are instead false schemas, preserving their meaning.
 // This policy is shared by tools and response formats, not provider-specific.
-func (c *schemaCleaner) clean(v any, path, resource *schemaPath, legacyRefs bool) (any, bool) {
+func (c *schemaCleaner) clean(v any, path, resource *schemaPath, legacyRefs bool, dialect string) (any, bool) {
 	m, ok := v.(map[string]any)
 	if !ok {
 		if _, ok := v.(bool); ok {
@@ -73,9 +73,10 @@ func (c *schemaCleaner) clean(v any, path, resource *schemaPath, legacyRefs bool
 		}
 		return map[string]any{}, true
 	}
-	if dialect, ok := m["$schema"].(string); ok {
+	if declared, ok := m["$schema"].(string); ok {
+		dialect = schemaDialect(declared)
 		legacyRefs = false
-		switch schemaDialect(dialect) {
+		switch dialect {
 		case "json-schema.org/draft-04/schema", "json-schema.org/draft-06/schema", "json-schema.org/draft-07/schema":
 			legacyRefs = true
 		}
@@ -86,16 +87,16 @@ func (c *schemaCleaner) clean(v any, path, resource *schemaPath, legacyRefs bool
 		// behavior when declaring 2020-12, where those siblings would apply.
 		for key := range m {
 			switch key {
-			case "$ref", "$schema", "id", "$id", "definitions", "$defs", "title", "description", "default", "examples", "$comment":
+			case "$ref", "$schema", "definitions", "$defs", "title", "description", "default", "examples", "$comment":
 				continue
 			}
-			if schemaKeywordKind(key) != "" || key == "dependencies" || key == "nullable" || key == "additionalItems" {
+			if schemaKeywordKind(key) != "" || key == "id" || key == "const" || key == "dependencies" || key == "nullable" || key == "additionalItems" {
 				delete(m, key)
 				changed = true
 			}
 		}
 	}
-	changed = convertLegacySchema(m, path) || changed
+	changed = convertLegacySchema(m, path, dialect) || changed
 	if _, ok := m["$id"]; ok {
 		resource = path
 	}
@@ -117,7 +118,7 @@ func (c *schemaCleaner) clean(v any, path, resource *schemaPath, legacyRefs bool
 				}
 			}
 			if valid {
-				next, changedChild := c.clean(value, path.child(key), resource, legacyRefs)
+				next, changedChild := c.clean(value, path.child(key), resource, legacyRefs, dialect)
 				m[key] = next
 				changed = changed || changedChild
 			}
@@ -126,7 +127,7 @@ func (c *schemaCleaner) clean(v any, path, resource *schemaPath, legacyRefs bool
 			valid = ok
 			if ok {
 				for name, child := range children {
-					next, changedChild := c.clean(child, path.child(key).child(name), resource, legacyRefs)
+					next, changedChild := c.clean(child, path.child(key).child(name), resource, legacyRefs, dialect)
 					children[name] = next
 					changed = changed || changedChild
 				}
@@ -139,7 +140,7 @@ func (c *schemaCleaner) clean(v any, path, resource *schemaPath, legacyRefs bool
 			}
 			if valid {
 				for i, child := range children {
-					next, changedChild := c.clean(child, path.child(key).child(strconv.Itoa(i)), resource, legacyRefs)
+					next, changedChild := c.clean(child, path.child(key).child(strconv.Itoa(i)), resource, legacyRefs, dialect)
 					children[i] = next
 					changed = changed || changedChild
 				}
@@ -193,6 +194,14 @@ func (c *schemaCleaner) clean(v any, path, resource *schemaPath, legacyRefs bool
 		}
 		if !valid {
 			delete(m, key)
+			changed = true
+		}
+	}
+	// An absent tail is unconstrained in 2020-12. Make it explicit for
+	// OpenAI-compatible endpoints, which require items even beside prefixItems.
+	if _, prefix := m["prefixItems"]; prefix {
+		if _, tail := m["items"]; !tail {
+			m["items"] = map[string]any{}
 			changed = true
 		}
 	}
@@ -312,7 +321,7 @@ func numberIs(n json.Number, integer bool) bool {
 	return exp >= int64(fraction-trailing)
 }
 
-func convertLegacySchema(m map[string]any, path *schemaPath) bool {
+func convertLegacySchema(m map[string]any, path *schemaPath, dialect string) bool {
 	changed := false
 	// Draft-04 booleans qualify the inclusive bound. No bound means no
 	// constraint; false keeps the inclusive bound, true moves it unchanged.
@@ -334,7 +343,10 @@ func convertLegacySchema(m map[string]any, path *schemaPath) bool {
 		// A mixed-draft prefixItems cannot also express this tuple. Intersect the
 		// two prefix constraints through allOf instead of overwriting either.
 		if prefix, exists := m["prefixItems"]; exists {
-			appendSchemaConjunct(m, map[string]any{"prefixItems": prefix})
+			index := appendSchemaConjunct(m, map[string]any{"prefixItems": prefix})
+			original := path.inputChild("prefixItems")
+			original.output = []string{"allOf", strconv.Itoa(index), "prefixItems"}
+			path.child("allOf").child(strconv.Itoa(index)).route("prefixItems", original)
 		}
 		if len(tuple) > 0 {
 			m["prefixItems"] = tuple
@@ -350,7 +362,8 @@ func convertLegacySchema(m map[string]any, path *schemaPath) bool {
 	}
 	if deps, exists := m["dependencies"]; exists {
 		if deps, ok := deps.(map[string]any); ok {
-			for name, dep := range deps {
+			for _, name := range path.child("dependencies").orderedKeys(deps) {
+				dep := deps[name]
 				key := "dependentSchemas"
 				if _, ok := dep.([]any); ok {
 					key = "dependentRequired"
@@ -366,7 +379,12 @@ func convertLegacySchema(m map[string]any, path *schemaPath) bool {
 				if old, ok := target[name]; ok {
 					// Both declarations apply: allOf preserves the conjunction, including
 					// dependentRequired collisions, without silently dropping either.
-					appendSchemaConjunct(m, map[string]any{key: map[string]any{name: old}})
+					index := appendSchemaConjunct(m, map[string]any{key: map[string]any{name: old}})
+					original := path.inputChild(key).inputChild(name)
+					// Replace the already emitted container segment as well as name.
+					original.replaceParent = true
+					original.output = []string{"allOf", strconv.Itoa(index), key, name}
+					path.child("allOf").child(strconv.Itoa(index)).child(key).route(name, original)
 				}
 				target[name] = dep
 				original := path.inputChild("dependencies")
@@ -379,7 +397,7 @@ func convertLegacySchema(m map[string]any, path *schemaPath) bool {
 		delete(m, "dependencies")
 		changed = true
 	}
-	if nullable, exists := m["nullable"]; exists {
+	if nullable, exists := m["nullable"]; exists && dialect == "" {
 		// OpenAPI 3.0 §4.7.24.2: add null ONLY to an explicit type; enum and
 		// other constraints still apply (they may themselves exclude null).
 		if nullable == true {
@@ -397,7 +415,7 @@ func convertLegacySchema(m map[string]any, path *schemaPath) bool {
 			changed = true
 		}
 	}
-	if id, ok := m["id"].(string); ok {
+	if id, ok := m["id"].(string); ok && (dialect == "" || dialect == "json-schema.org/draft-04/schema") {
 		if _, exists := m["$id"]; !exists {
 			base, anchor, hasFragment := strings.Cut(id, "#")
 			if base != "" || !hasFragment {
@@ -414,11 +432,26 @@ func convertLegacySchema(m map[string]any, path *schemaPath) bool {
 			changed = true
 		}
 	}
+	if id, ok := m["$id"].(string); ok && (dialect == "" || dialect == "json-schema.org/draft-06/schema" || dialect == "json-schema.org/draft-07/schema") {
+		base, anchor, hasFragment := strings.Cut(id, "#")
+		if hasFragment && schemaAnchor.MatchString(anchor) {
+			if base == "" {
+				delete(m, "$id")
+			} else {
+				m["$id"] = base
+			}
+			if _, exists := m["$anchor"]; !exists {
+				m["$anchor"] = anchor
+			}
+			changed = true
+		}
+	}
 	return changed
 }
-func appendSchemaConjunct(m map[string]any, schema any) {
+func appendSchemaConjunct(m map[string]any, schema any) int {
 	all, _ := m["allOf"].([]any)
 	m["allOf"] = append(all, schema)
+	return len(all)
 }
 
 // propertyView builds typed accessors directly from the one decoded tree.
@@ -473,24 +506,17 @@ func propertyMapView(v any) map[string]Property {
 	return out
 }
 
-func marshalSchemaJSON(value any) ([]byte, error) {
-	var buf bytes.Buffer
-	encoder := json.NewEncoder(&buf)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(value); err != nil {
-		return nil, err
-	}
-	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
-}
-
 // A path trie records renamed positions during the same cleaning walk. Local
 // JSON Pointer references are rewritten afterwards in O(reference length), so
 // moving tuples/dependencies does not leave dangling or differently-bound refs.
 // The trie tracks the resource root of $id scopes, including draft-04 id.
 type schemaPath struct {
+	order  []string
 	input  map[string]*schemaPath
 	routes map[string]*schemaPath
 	output []string
+	// A dependency collision moves one member out of its original container.
+	replaceParent bool
 }
 
 func (p *schemaPath) inputChild(key string) *schemaPath {
@@ -547,6 +573,9 @@ func (c *schemaCleaner) rewriteReferences() bool {
 				path = path.input[key]
 			}
 			if path != nil && path.output != nil {
+				if path.replaceParent && len(out) > 0 {
+					out = out[:len(out)-1]
+				}
 				out = append(out, path.output...)
 				moved = true
 			} else {

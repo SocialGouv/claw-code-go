@@ -18,11 +18,12 @@ import (
 var corpus embed.FS
 
 type example struct {
-	Name    string            `json:"name"`
-	Input   json.RawMessage   `json:"input"`
-	Want    json.RawMessage   `json:"want"`
-	Valid   []json.RawMessage `json:"valid"`
-	Invalid []json.RawMessage `json:"invalid"`
+	Name      string                     `json:"name"`
+	Input     json.RawMessage            `json:"input"`
+	Want      json.RawMessage            `json:"want"`
+	Valid     []json.RawMessage          `json:"valid"`
+	Invalid   []json.RawMessage          `json:"invalid"`
+	Resources map[string]json.RawMessage `json:"resources"`
 }
 
 type offline struct{}
@@ -46,8 +47,9 @@ func value(t *testing.T, raw []byte) any {
 }
 
 // Run checks the actual wire schema against the embedded 2020-12 meta-schema,
-// independently of its own $schema declaration. Expected trees and instance
-// witnesses additionally prevent satisfying the guarantee by dropping constraints.
+// independently of its own $schema declaration, and compiles EVERY output with
+// an offline loader to resolve references. Expected trees and instance witnesses
+// additionally prevent satisfying the guarantee by dropping constraints.
 func Run(t *testing.T, emit func([]byte) ([]byte, error)) {
 	t.Helper()
 	meta, err := compiler().Compile("https://json-schema.org/draft/2020-12/schema")
@@ -73,6 +75,14 @@ func Run(t *testing.T, emit func([]byte) ([]byte, error)) {
 		raw, err := corpus.ReadFile("testdata/" + file.Name())
 		if err != nil {
 			t.Fatal(err)
+		}
+		if strings.HasSuffix(file.Name(), "-cases.json") {
+			var extra []example
+			if err := json.Unmarshal(raw, &extra); err != nil {
+				t.Fatal(err)
+			}
+			cases = append(cases, extra...)
+			continue
 		}
 		tc := example{Name: file.Name(), Input: raw}
 		switch file.Name() {
@@ -100,7 +110,18 @@ func Run(t *testing.T, emit func([]byte) ([]byte, error)) {
 	keywords := strings.Fields(`$schema $id $ref $anchor $dynamicRef $dynamicAnchor $recursiveRef $recursiveAnchor $vocabulary $comment $defs definitions dependencies dependentSchemas dependentRequired properties patternProperties items prefixItems additionalProperties unevaluatedProperties unevaluatedItems propertyNames contains not if then else contentSchema allOf anyOf oneOf type enum required title description format contentEncoding contentMediaType pattern multipleOf minimum maximum exclusiveMinimum exclusiveMaximum maxLength minLength maxItems minItems minContains maxContains minProperties maxProperties uniqueItems readOnly writeOnly deprecated examples`)
 	for _, key := range keywords {
 		for i, raw := range []string{`null`, `true`, `false`, `"x"`, `0`, `-1`, `0.5`, `[]`, `{}`, `[null]`, `{"x":null}`, `["a","a"]`} {
-			cases = append(cases, example{Name: fmt.Sprintf("meta-shapes/%s/%d", key, i), Input: json.RawMessage(fmt.Sprintf("{%q:%s}", key, raw))})
+			// Valid URI strings need resolvable targets for the compilation
+			// oracle. Keep the malformed shapes unchanged.
+			extra := ""
+			if raw == `"x"` {
+				switch key {
+				case "$schema":
+					raw = `"https://json-schema.org/draft/2020-12/schema"`
+				case "$ref", "$dynamicRef", "$recursiveRef":
+					raw, extra = `"#/$defs/target"`, `,"$defs":{"target":true}`
+				}
+			}
+			cases = append(cases, example{Name: fmt.Sprintf("meta-shapes/%s/%d", key, i), Input: json.RawMessage(fmt.Sprintf("{%q:%s%s}", key, raw, extra))})
 		}
 	}
 	for _, tc := range cases {
@@ -116,16 +137,18 @@ func Run(t *testing.T, emit func([]byte) ([]byte, error)) {
 			if len(tc.Want) > 0 && !reflect.DeepEqual(got, value(t, tc.Want)) {
 				t.Errorf("conversion lost or changed semantics\ngot: %s\nwant: %s", raw, tc.Want)
 			}
-			if len(tc.Valid)+len(tc.Invalid) == 0 {
-				return
-			}
 			c := compiler()
+			for uri, resource := range tc.Resources {
+				if err := c.AddResource(uri, value(t, resource)); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if err = c.AddResource("https://fixture.test/schema", got); err != nil {
 				t.Fatal(err)
 			}
 			s, err := c.Compile("https://fixture.test/schema")
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("wire schema does not compile offline: %v\nwire: %s", err, raw)
 			}
 			for _, v := range tc.Valid {
 				if err := s.Validate(value(t, v)); err != nil {

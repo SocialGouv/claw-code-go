@@ -626,7 +626,8 @@
         {
           "type": "string"
         }
-      ]
+      ],
+      "items": {}
     }
   },
   {
@@ -641,7 +642,8 @@
     "want": {
       "prefixItems": [
         {}
-      ]
+      ],
+      "items": {}
     }
   },
   {
@@ -674,7 +676,8 @@
         {
           "type": "string"
         }
-      ]
+      ],
+      "items": {}
     }
   },
   {
@@ -689,7 +692,8 @@
     "want": {
       "prefixItems": [
         {}
-      ]
+      ],
+      "items": {}
     }
   },
   {
@@ -1097,6 +1101,14 @@
       {
         "c": 1,
         "f": 3
+      },
+      {
+        "a": 1,
+        "b": 2
+      },
+      {
+        "c": 1,
+        "d": 2
       }
     ]
   },
@@ -1266,10 +1278,12 @@
       },
       "$anchor": "0bad",
       "$id": "https://example.test/x#bad",
-      "type": "invalid"
+      "type": "invalid",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
     },
     "want": {
-      "dependentRequired": {}
+      "dependentRequired": {},
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
     }
   },
   {
@@ -1498,6 +1512,11 @@
         "t": {
           "type": "string"
         }
+      }
+    },
+    "resources": {
+      "https://example.test/json-schema.org/draft-07/custom": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema"
       }
     }
   }
