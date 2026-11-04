@@ -311,6 +311,9 @@ func (c *Client) StreamResponse(ctx context.Context, req api.CreateMessageReques
 // ----- Request conversion ----------------------------------------------------
 
 func (c *Client) buildRequest(req api.CreateMessageRequest) (*oaiRequest, error) {
+	if err := req.ResponseFormat.Validate(); err != nil {
+		return nil, err
+	}
 	model := c.requestModel(req)
 	// Capability checks read the bare model name; the wire carries it
 	// verbatim when the caller asked for it.

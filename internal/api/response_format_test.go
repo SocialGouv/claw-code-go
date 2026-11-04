@@ -1,14 +1,14 @@
 package api
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
 	"testing"
 )
 
-func TestResponseFormatDoesNotChangeAnthropicWire(t *testing.T) {
+func TestResponseFormatIsRefusedOnAnthropicWire(t *testing.T) {
 	req := CreateMessageRequest{Model: "claude-sonnet-4-20250514", MaxTokens: 1024}
-	before, err := marshalAnthropicRequest(req)
+	_, err := marshalAnthropicRequest(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -19,12 +19,13 @@ func TestResponseFormatDoesNotChangeAnthropicWire(t *testing.T) {
 		}},
 	} {
 		req.ResponseFormat = format
-		after, err := marshalAnthropicRequest(req)
-		if err != nil {
-			t.Fatal(err)
+		_, err := marshalAnthropicRequest(req)
+		var invalid interface {
+			error
+			InvalidField() string
 		}
-		if !bytes.Equal(after, before) {
-			t.Fatalf("OpenAI-only option changes Anthropic body:\ngot %s\nwant %s", after, before)
+		if !errors.As(err, &invalid) {
+			t.Fatalf("want typed refusal, got %T: %v", err, err)
 		}
 	}
 }

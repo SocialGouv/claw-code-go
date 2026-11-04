@@ -48,6 +48,17 @@ OpenAI Chat Completions and Foundry send `response_format`. The OpenAI
 Responses path maps the same option to `text.format`, flattening the
 `json_schema` envelope as specified in the
 [OpenAI migration guide](https://developers.openai.com/api/docs/guides/migrate-to-responses).
-Anthropic-wire requests ignore this OpenAI-specific option and keep their
-existing envelope. The transport does not validate generated output or
-select the capability on behalf of an orchestrator.
+Anthropic, Bedrock, Vertex, z.ai and Moonshot reject every non-nil
+`ResponseFormat` with a local `*api.RequestValidationError` before sending HTTP.
+This extends the explicit-refusal policy used for OpenAI-only provider options.
+
+All three native transports validate the same envelope: `Type` must be
+`json_schema` or `json_object`; `json_schema` requires a descriptor with a
+nonempty `Name` and valid, non-null JSON in `Schema`. An empty `ResponseFormat{}`
+is invalid. `json_object` must have no `JSONSchema` descriptor; supplying one
+is rejected consistently, rather than transmitted or discarded depending on
+the transport. Errors identify the invalid field and are not retryable.
+
+Validation covers the request shape. The endpoint/model still determines its
+supported JSON Schema subset, including strict-mode constraints. The transport
+does not validate generated output or choose a format for an orchestrator.

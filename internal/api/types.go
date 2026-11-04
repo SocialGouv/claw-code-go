@@ -397,7 +397,7 @@ type CreateMessageRequest struct {
 	Stop             []string       `json:"stop,omitempty"`
 	ReasoningEffort  string         `json:"reasoning_effort,omitempty"`
 	// ResponseFormat is opt-in on OpenAI/Foundry chat and maps to text.format
-	// on OpenAI Responses. Anthropic-wire providers do not send this field.
+	// on OpenAI Responses. Anthropic-wire providers reject a non-nil value.
 	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
 
 	// Thinking opts into extended thinking. nil means "use the model's

@@ -208,6 +208,9 @@ type oaiRequest struct {
 // ----- buildRequest ----------------------------------------------------------
 
 func (c *Client) buildRequest(req api.CreateMessageRequest) ([]byte, error) {
+	if err := req.ResponseFormat.Validate(); err != nil {
+		return nil, err
+	}
 	maxTokens := req.MaxTokens
 	if maxTokens == 0 {
 		maxTokens = c.MaxTokens

@@ -315,6 +315,9 @@ func (c *Client) streamResponses(ctx context.Context, req api.CreateMessageReque
 // ----- Request conversion ---------------------------------------------------
 
 func (c *Client) buildResponsesRequest(req api.CreateMessageRequest) (*oaiResponsesRequest, error) {
+	if err := req.ResponseFormat.Validate(); err != nil {
+		return nil, err
+	}
 	model := c.requestModel(req)
 	wireModel := stripRoutingPrefix(model)
 	if c.ModelVerbatim {
