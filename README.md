@@ -43,6 +43,7 @@ Five providers are wired through a unified `<provider>/<model-id>` addressing sc
 - **AWS Bedrock**, **Google Vertex AI**, **Azure AI Foundry** — real implementations on top of the official SDKs, with live smoke tests under build tag `live`.
 - Capability-aware routing, fallback chains, and per-provider `reasoning_effort` translation in `internal/apikit`.
 - Typed `api.APIError` (`StatusCode`, `Retryable`) so callers drive retry classification via `errors.As`.
+- [Lossless JSON Schema and optional native response formats](docs/structured-output.md) for OpenAI-compatible routes.
 
 ### 🛠️ Built-in tools
 

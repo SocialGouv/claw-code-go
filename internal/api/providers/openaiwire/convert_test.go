@@ -1,6 +1,7 @@
 package openaiwire
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -43,7 +44,11 @@ func TestConvertTools_AnyTypePropertyRoundTripsAsEmptySchema(t *testing.T) {
 		t.Fatalf("expected 1 tool, got %d", len(tools))
 	}
 
-	params := string(tools[0].Function.Parameters)
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, tools[0].Function.Parameters); err != nil {
+		t.Fatal(err)
+	}
+	params := compact.String()
 	if strings.Contains(params, `"type":""`) {
 		t.Errorf("any-type property leaked empty `type`: %s", params)
 	}

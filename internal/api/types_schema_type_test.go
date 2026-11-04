@@ -72,8 +72,11 @@ func TestProperty_TypeNested(t *testing.T) {
 func TestProperty_TypeInvalid(t *testing.T) {
 	for _, in := range []string{`{"type":5}`, `{"type":[1,2]}`, `{"type":{"a":1}}`} {
 		var p Property
-		if err := json.Unmarshal([]byte(in), &p); err == nil {
-			t.Errorf("%s: want an error, got %+v", in, p)
+		if err := json.Unmarshal([]byte(in), &p); err != nil {
+			t.Fatal(err)
+		}
+		if string(p.Raw) != "{}" {
+			t.Errorf("invalid type must be omitted: %s", p.Raw)
 		}
 	}
 }
