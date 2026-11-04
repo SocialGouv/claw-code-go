@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"runtime"
 	"strings"
 	"testing"
@@ -81,5 +82,61 @@ func TestSchemaDecodeAllocationGrowth(t *testing.T) {
 	small, large := allocated(300), allocated(900)
 	if large > 5*small {
 		t.Fatalf("decode allocations grow superlinearly: %d -> %d bytes", small, large)
+	}
+}
+
+func r4benchSchema(n int, changed bool) []byte {
+	var b strings.Builder
+	b.WriteString(`{"type":"object","properties":{`)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		fmt.Fprintf(&b, `"field_%d":{"type":"string","description":"Field number %d with a reasonably long human description.","enum":["alpha","beta","gamma","delta","epsilon","zeta","eta","theta","iota","kappa"],"minLength":1}`, i, i)
+	}
+	b.WriteString(`},"required":["field_0"],"additionalProperties":false`)
+	if changed {
+		b.WriteString(`,"$schema":"http://json-schema.org/draft-07/schema#"`)
+	}
+	b.WriteString(`}`)
+	return []byte(b.String())
+}
+
+func BenchmarkR4DecodeMarshal(b *testing.B) {
+	for _, n := range []int{20, 5000} {
+		for _, changed := range []bool{false, true} {
+			raw := r4benchSchema(n, changed)
+			b.Run(fmt.Sprintf("props=%d/bytes=%d/changed=%v", n, len(raw), changed), func(b *testing.B) {
+				b.ReportAllocs()
+				b.SetBytes(int64(len(raw)))
+				for i := 0; i < b.N; i++ {
+					var s InputSchema
+					if err := json.Unmarshal(raw, &s); err != nil {
+						b.Fatal(err)
+					}
+					if _, err := s.MarshalJSON(); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		}
+	}
+}
+
+// The unchanged 4 KiB tool needs fewer than 1000 allocations with Decode.
+// Leave headroom while catching eager token decoding (~3300 allocations).
+func TestSchemaUnchangedDecodeAllocations(t *testing.T) {
+	raw := r4benchSchema(20, false)
+	allocs := testing.AllocsPerRun(20, func() {
+		var s InputSchema
+		if err := json.Unmarshal(raw, &s); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.MarshalJSON(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if allocs > 1500 {
+		t.Fatalf("unchanged schema allocation budget exceeded: %.0f > 1500", allocs)
 	}
 }

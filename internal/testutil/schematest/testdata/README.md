@@ -38,6 +38,15 @@ The dependencies-collision case also rejects instances violating only the modern
 half. OpenAI tests separately capture chat and Responses bodies for tuple tails
 and property ordering; no provider is contacted.
 
+`r4-cases.json` adds closed tuples with `unevaluatedItems` at the same position,
+through `$ref` and `allOf`, and in declared 2019-09 tuples. Each rejects
+`["a",1]`. It also checks that a draft-06/07 `$id` with an unrepresentable
+anchor retains its base scope, using different types at the inner and outer
+pointer targets; the draft-04 `id` case is the control. Round-4 ordered-wire
+witnesses in `internal/api/schema_r3_test.go` cover last-value duplicate keys,
+unique output keys, deterministic synthesized keys and dependency collisions,
+opaque `nullable` under declared dialects, and `id` under 2019-09.
+
 Sources:
 
 - [FastMCP producer report and reproduction](https://github.com/PrefectHQ/fastmcp/issues/5682)

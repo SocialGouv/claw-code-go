@@ -1,9 +1,11 @@
 # Structured output transport
 
 `pkg/api.InputSchema` and `pkg/api.Property` normalize received schemas at the
-public `json.Unmarshal` boundary and store the result in `Raw`. A single
-`UseNumber` token decode records object order and feeds both the shared cleanup
-and the typed read accessors.
+public `json.Unmarshal` boundary and store the result in `Raw`. A fast
+`UseNumber` decode feeds the shared cleanup and the typed read accessors.
+Only schemas that need rewriting are decoded again to record object order.
+The first decode enforces `encoding/json`'s nesting limit of 10000 containers,
+including manually assigned `Raw`; excessive depth returns a `*json.SyntaxError`.
 Only the public root retains raw bytes. Marshal reuses the cleaned bytes when
 an immutable snapshot matches `Raw`; replacing or editing `Raw` in place
 triggers the same cleanup. Decode, retained memory and marshal scale with the
@@ -30,13 +32,13 @@ for every tool transport, and for native response schemas:
 | Received form | Output and semantics |
 | --- | --- |
 | Boolean `exclusiveMinimum` / `exclusiveMaximum` | `true` plus a numeric inclusive bound moves that exact number to the exclusive keyword and removes the inclusive one. `false` disappears, keeping the inclusive bound. An orphan boolean disappears: it supplies no bound. Numeric exclusive bounds are unchanged. |
-| Tuple `items: [...]` plus `additionalItems` | `prefixItems` plus `items`, preserving positional and tail constraints. An empty tuple becomes only its tail constraint. Mixed modern constraints are intersected through `allOf`. A surviving `prefixItems` without a tail gets `items: {}`, equivalent to an absent tail and required by OpenAI-compatible endpoints. |
+| Tuple `items: [...]` plus `additionalItems` | `prefixItems` plus `items`, preserving positional and tail constraints. An empty tuple becomes only its tail constraint. Mixed modern constraints are intersected through `allOf`. A surviving `prefixItems` without a tail gets `items: {}` for OpenAI-compatible endpoints only if no schema position retains `unevaluatedItems` after cleanup. An explicit `items` evaluates the remaining elements and would otherwise neutralize that constraint, including through `$ref` or `allOf`. |
 | `dependencies` arrays / schemas | `dependentRequired` / `dependentSchemas`. Colliding modern declarations are conjoined through `allOf`, preserving both constraints. |
-| Local JSON Pointer references into migrated positions | Rewritten to the new tuple/dependency position, with pointer escaping and local `$id` resource scopes preserved. Pointers into colliding modern declarations moved into `allOf` are also rewritten. External resources are never loaded or expanded. |
+| Fragment-only JSON Pointer references (`#/...`) into migrated positions | Rewritten to the new tuple/dependency position, with pointer escaping and resolution relative to the containing `$id` resource. Pointers into colliding modern declarations moved into `allOf` are also rewritten. References with a URI before the fragment, such as `inner#/items/0`, are not rewritten, even when the URI names a resource in the same document; a migrated target can leave them dangling. External resources are never loaded or expanded. |
 | `definitions` | Kept and recursively cleaned, preserving existing `#/definitions/...` references. The 2020-12 meta-schema permits it. |
 | Old standard `$schema` declaration | Replaced with `https://json-schema.org/draft/2020-12/schema` after conversion. Explicit draft-04/06/07 `$ref` validation siblings (including `const`) and sibling `id`/`$id` remain ignored as in the source dialect. Definition containers and annotations such as `description` survive. |
 | Draft-04 `id` | Becomes `$id` only under draft-04 or without a declared dialect; representable fragments become `$anchor`. With other declared dialects, `id` stays an annotation. Existing modern identifiers take precedence. |
-| Draft-06/07 `$id: "base#name"` | Split into `$id: "base"` and `$anchor: "name"`; an anchor-only identifier creates no new resource scope. Also supported without a declared dialect. |
+| Draft-06/07 `$id: "base#name"` | Split into `$id: "base"` and `$anchor: "name"` when the name is a valid 2020-12 anchor. Otherwise a nonempty base is kept, preserving its local pointer scope, but the fragment's reference target is lost. An anchor-only identifier creates no new resource scope. Also supported without a declared dialect. |
 | OpenAPI 3.0 `nullable: true` | Without a declared JSON Schema dialect, adds `null` to an explicit scalar `type`. It does **not** bypass `enum`, `const` or other constraints. Without an explicit type it has no effect. `nullable: false` disappears. |
 | Null child in a schema position | Becomes `{}` in maps, arrays and single-schema keywords, including `not`, conditional branches and unevaluated keywords. |
 | Wrong container / keyword type | Retained when permitted by 2020-12, otherwise removed. Invalid schema members become `{}`. Empty `anyOf`/`oneOf` remain unsatisfiable via `not: {}`; empty `allOf`/`prefixItems` disappear. |
@@ -47,11 +49,15 @@ Omitting an invalid keyword or replacing an invalid child with `{}` discards
 its intended constraint; it can widen or narrow acceptance depending on the
 surrounding applicator (especially `not`/`oneOf`). Invalid bounds, types,
 required lists, dependent-required members, lengths/counts, anchors and
-container shapes follow that policy. Non-representable `id` fragments lose
-their reference target; invalid modern `$id` fragments are omitted. Unsupported
+container shapes follow that policy. Non-representable legacy `id`/`$id` fragments
+lose their reference target while retaining a nonempty base; invalid modern
+`$id` fragments are omitted. Unsupported
 legacy vocabulary semantics (for example a boolean `$recursiveAnchor`) are
 not a complete dialect migration and may be lost when they violate 2020-12.
 These losses are documented beside the cleanup in production code as well.
+This is not a dialect-aware treatment of every unknown keyword: modern `$id`
+under draft-04 and `$anchor` under draft-06/07 can still affect resolution, and
+relabeling may activate newer constraints that the source dialect ignored.
 The corpus guarantee covers meta-schema conformance and offline reference
 resolution, not automatic acceptance by every endpoint's supported subset, resolution of external references, or validation
 of generated output.
@@ -69,8 +75,9 @@ precision and exponent spelling. An unchanged valid schema keeps its bytes.
 Rewriting preserves the relative order of original object keys, including `properties` used by structured output,
 moved schemas and opaque instance data; synthesized keys are appended
 deterministically. String escapes may be re-encoded without changing their
-values. Adding an unconstrained `items: {}` is a deliberate wire compatibility
-change even for an otherwise valid 2020-12 schema. With nonempty `Raw`, edits to
+values. Adding `items: {}` when no schema position retains `unevaluatedItems`
+is a deliberate wire compatibility change even for an otherwise valid 2020-12
+schema. With nonempty `Raw`, edits to
 typed fields do not change serialization.
 Decode a replacement to update both views, or edit `Raw` if no typed view is
 needed. Clearing `Raw` opts into the typed view and discards keywords outside

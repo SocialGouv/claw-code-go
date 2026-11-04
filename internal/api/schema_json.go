@@ -14,12 +14,13 @@ import (
 
 // decodeSchemaJSON is the single UTF-8 and JSON decoding choke point for raw
 // tool schemas, including Raw assigned by hand. UseNumber preserves numeric
-// lexemes; a single tree walk avoids re-decoding every descendant's subtree.
-func decodeSchemaJSON(raw []byte, root *schemaPath) (any, error) {
+// lexemes. Decode enforces encoding/json's 10000-container depth limit before
+// any recursive schema or order traversal, including for opaque instance data.
+func decodeSchemaJSON(raw []byte) (any, error) {
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.UseNumber()
-	v, err := decodeOrderedSchema(d, root)
-	if err != nil {
+	var v any
+	if err := d.Decode(&v); err != nil {
 		return nil, err
 	}
 	if err := d.Decode(new(any)); err != io.EOF {
@@ -36,7 +37,7 @@ func decodeSchemaJSON(raw []byte, root *schemaPath) (any, error) {
 // their exact bytes. encoding/json replaces each invalid UTF-8 byte with U+FFFD.
 func normalizedSchemaJSON(raw []byte) (any, json.RawMessage, error) {
 	root := &schemaPath{}
-	v, err := decodeSchemaJSON(raw, root)
+	v, err := decodeSchemaJSON(raw)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -47,10 +48,24 @@ func normalizedSchemaJSON(raw []byte) (any, json.RawMessage, error) {
 	}
 	cleaner := schemaCleaner{}
 	v, changed := cleaner.clean(v, root, root, false, "")
+	changed = cleaner.addItemTails() || changed
 	changed = cleaner.rewriteReferences() || changed
 	if !changed && utf8.Valid(raw) {
 		return v, raw, nil
 	}
+	// Only rewritten schemas need object order. Rebuild from the validated
+	// input so migration routes and duplicate-key values share the same tree.
+	root = &schemaPath{}
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.UseNumber()
+	v, err = decodeOrderedSchema(d, root)
+	if err != nil {
+		return nil, nil, err
+	}
+	cleaner = schemaCleaner{}
+	v, _ = cleaner.clean(v, root, root, false, "")
+	cleaner.addItemTails()
+	cleaner.rewriteReferences()
 	out, err := marshalOrderedSchema(v, root)
 	return v, out, err
 }
@@ -197,15 +212,30 @@ func (c *schemaCleaner) clean(v any, path, resource *schemaPath, legacyRefs bool
 			changed = true
 		}
 	}
-	// An absent tail is unconstrained in 2020-12. Make it explicit for
-	// OpenAI-compatible endpoints, which require items even beside prefixItems.
+	// Only surviving keywords matter; removed ones must not defer the tail
+	// until a second normalization of the emitted document.
+	if _, exists := m["unevaluatedItems"]; exists {
+		c.hasUnevaluatedItems = true
+	}
+	// Defer compatibility tails until every schema position has been visited:
+	// unevaluatedItems can apply through a reference or an allOf elsewhere.
 	if _, prefix := m["prefixItems"]; prefix {
 		if _, tail := m["items"]; !tail {
+			c.openTails = append(c.openTails, m)
+		}
+	}
+	return m, changed
+}
+
+func (c *schemaCleaner) addItemTails() bool {
+	changed := false
+	if !c.hasUnevaluatedItems {
+		for _, m := range c.openTails {
 			m["items"] = map[string]any{}
 			changed = true
 		}
 	}
-	return m, changed
+	return changed
 }
 
 var schemaAnchor = regexp.MustCompile(`^[A-Za-z_][-A-Za-z0-9._]*$`)
@@ -444,6 +474,11 @@ func convertLegacySchema(m map[string]any, path *schemaPath, dialect string) boo
 				m["$anchor"] = anchor
 			}
 			changed = true
+		} else if hasFragment && anchor != "" && base != "" {
+			// The unrepresentable anchor target is lost, but local pointers
+			// must still resolve within this resource rather than its parent.
+			m["$id"] = base
+			changed = true
 		}
 	}
 	return changed
@@ -551,7 +586,11 @@ type schemaReference struct {
 	key, ref string
 	resource *schemaPath
 }
-type schemaCleaner struct{ refs []schemaReference }
+type schemaCleaner struct {
+	refs                []schemaReference
+	openTails           []map[string]any
+	hasUnevaluatedItems bool
+}
 
 func (c *schemaCleaner) rewriteReferences() bool {
 	changed := false

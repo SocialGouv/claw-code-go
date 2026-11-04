@@ -11,6 +11,7 @@ import (
 // Record object order alongside the decoded tree. The cleaner's path routes
 // carry this order with schemas moved into prefixItems, dependentSchemas or
 // allOf. Instance data and extension objects retain their order too.
+// The input must first pass decodeSchemaJSON's syntax and depth checks.
 func decodeOrderedSchema(d *json.Decoder, path *schemaPath) (any, error) {
 	token, err := d.Token()
 	if err != nil {
