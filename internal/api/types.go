@@ -185,27 +185,30 @@ type InputSchema struct {
 
 // UnmarshalJSON keeps the original schema alongside its typed read view.
 func (s *InputSchema) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return nil
+	}
 	var view Property
-	if err := json.Unmarshal(data, &view); err != nil {
+	if err := view.unmarshalJSON(data, false); err != nil {
 		return err
 	}
 	// A boolean schema (true/false) has no definitions; only an object does.
 	var defs struct {
-		Defs map[string]Property `json:"$defs,omitempty"`
+		Defs propertyReadMap `json:"$defs,omitempty"`
 	}
 	if trimmed := bytes.TrimSpace(data); len(trimmed) > 0 && trimmed[0] == '{' {
 		if err := json.Unmarshal(trimmed, &defs); err != nil {
 			return err
 		}
 	}
-	*s = InputSchema{Type: view.Type, Properties: view.Properties, Required: view.Required, Defs: defs.Defs, Raw: view.Raw}
+	*s = InputSchema{Type: view.Type, Properties: view.Properties, Required: view.Required, Defs: defs.Defs, Raw: ownedSchemaJSON(data)}
 	return nil
 }
 
 // MarshalJSON preserves received schemas; Go literals keep their typed shape.
 func (s InputSchema) MarshalJSON() ([]byte, error) {
-	if s.Raw != nil {
-		return s.Raw.MarshalJSON()
+	if len(s.Raw) > 0 {
+		return cleanSchemaJSON(s.Raw)
 	}
 	type plain InputSchema
 	return json.Marshal(plain(s))
@@ -244,6 +247,7 @@ type Property struct {
 	Properties  map[string]Property `json:"properties,omitempty"`
 	Required    []string            `json:"required,omitempty"`
 	// Raw takes precedence over the typed read view, as on InputSchema.
+	// Only the public decode root retains Raw; child accessors are typed views.
 	Raw json.RawMessage `json:"-"`
 }
 
@@ -251,16 +255,28 @@ type Property struct {
 // are valid JSON Schema; a generator that spells "any value" as the union of
 // every kind must not be refused with an unmarshal error at request time.
 func (p *Property) UnmarshalJSON(data []byte) error {
+	return p.unmarshalJSON(data, true)
+}
+
+// Only the public decode boundary owns Raw. Descendants are typed read views.
+func (p *Property) unmarshalJSON(data []byte, retainRaw bool) error {
 	trimmed := bytes.TrimSpace(data)
+	if bytes.Equal(trimmed, []byte("null")) {
+		return nil
+	}
 	if bytes.Equal(trimmed, []byte("true")) || bytes.Equal(trimmed, []byte("false")) {
-		*p = Property{Raw: bytes.Clone(data)}
+		*p = Property{}
+		if retainRaw {
+			p.Raw = ownedSchemaJSON(data)
+		}
 		return nil
 	}
 	type plain Property
 	var aux struct {
 		plain
-		Type  json.RawMessage `json:"type,omitempty"`
-		Items json.RawMessage `json:"items,omitempty"`
+		Type       json.RawMessage `json:"type,omitempty"`
+		Items      json.RawMessage `json:"items,omitempty"`
+		Properties propertyReadMap `json:"properties,omitempty"`
 	}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
@@ -272,21 +288,25 @@ func (p *Property) UnmarshalJSON(data []byte) error {
 	// Older JSON Schema drafts allow tuple arrays in items. The raw schema
 	// carries those; Items remains the accessor for a single item schema.
 	items := bytes.TrimSpace(aux.Items)
-	if len(items) > 0 && items[0] != '[' {
-		if err := json.Unmarshal(items, &aux.plain.Items); err != nil {
+	if len(items) > 0 && items[0] != '[' && !bytes.Equal(items, []byte("null")) {
+		aux.plain.Items = &Property{}
+		if err := aux.plain.Items.unmarshalJSON(items, false); err != nil {
 			return err
 		}
 	}
 	*p = Property(aux.plain)
 	p.Type, p.Types = typ, types
-	p.Raw = bytes.Clone(data)
+	p.Properties = aux.Properties
+	if retainRaw {
+		p.Raw = ownedSchemaJSON(data)
+	}
 	return nil
 }
 
 // MarshalJSON preserves decoded properties, including unknown keywords.
 func (p Property) MarshalJSON() ([]byte, error) {
-	if p.Raw != nil {
-		return p.Raw.MarshalJSON()
+	if len(p.Raw) > 0 {
+		return cleanSchemaJSON(p.Raw)
 	}
 	type plain Property
 	if len(p.Types) == 0 {

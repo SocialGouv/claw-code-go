@@ -1,6 +1,7 @@
 package openaiwire
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -132,8 +133,9 @@ func ConvertTools(provider string, tools []api.Tool) ([]Tool, error) {
 	return result, nil
 }
 
-// NormalizedParameters passes received schemas through verbatim. For Go-built
-// schemas it normalises the three shapes OpenAI's validator (both
+// NormalizedParameters repairs received roots without rebuilding their schema.
+// Conforming received schemas pass through verbatim. It normalises the shapes
+// OpenAI's validator (both
 // /chat/completions and /responses) rejects as `null`:
 //   - `required` is OMITTED when nil/empty — a nil []string marshals to JSON
 //     null and OpenAI errors "None is not of type 'array'". This is the shape
@@ -147,8 +149,12 @@ func ConvertTools(provider string, tools []api.Tool) ([]Tool, error) {
 // Both the chat and responses tool converters route through this so the
 // normalisation can never drift between the two OpenAI transports.
 func NormalizedParameters(schema api.InputSchema) (json.RawMessage, error) {
-	if schema.Raw != nil {
-		return MarshalJSON(schema)
+	if len(schema.Raw) > 0 {
+		raw, err := schema.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		return normalizeReceivedRoot(raw)
 	}
 	schemaType := schema.Type
 	if schemaType == "" {
@@ -197,4 +203,40 @@ func ConvertToolChoice(tc *api.ToolChoice) any {
 		return "none"
 	}
 	return nil
+}
+
+// normalizeReceivedRoot changes only missing/null root defaults. Nested schema
+// keywords and numbers remain RawMessages; no typed reconstruction occurs.
+func normalizeReceivedRoot(raw json.RawMessage) (json.RawMessage, error) {
+	trimmed := bytes.TrimSpace(raw)
+	var root map[string]json.RawMessage
+	if !bytes.Equal(trimmed, []byte("null")) && (len(trimmed) == 0 || trimmed[0] != '{') {
+		return nil, &api.RequestValidationError{Field: "InputSchema", Reason: "root must be a JSON object (or null for an empty schema)"}
+	}
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return nil, err
+	}
+	changed := root == nil
+	if root == nil {
+		root = map[string]json.RawMessage{}
+	}
+	isNull := func(value json.RawMessage) bool {
+		return len(value) == 0 || bytes.Equal(bytes.TrimSpace(value), []byte("null"))
+	}
+	if typ := root["type"]; isNull(typ) || bytes.Equal(bytes.TrimSpace(typ), []byte(`""`)) {
+		root["type"] = json.RawMessage(`"object"`)
+		changed = true
+	}
+	if isNull(root["properties"]) {
+		root["properties"] = json.RawMessage(`{}`)
+		changed = true
+	}
+	if value, ok := root["required"]; ok && isNull(value) {
+		delete(root, "required")
+		changed = true
+	}
+	if !changed {
+		return raw, nil
+	}
+	return MarshalJSON(root)
 }

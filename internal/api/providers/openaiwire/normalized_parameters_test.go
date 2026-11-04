@@ -2,6 +2,7 @@ package openaiwire
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -60,20 +61,35 @@ func TestNormalizedParameters(t *testing.T) {
 	})
 }
 
-// Received schemas own their shape, including omitted keywords and explicit
-// empty collections. Only Go-built schemas use the historical defaults.
+// Conforming received schemas preserve spelling and explicit empty collections.
+// Incomplete roots are normalized without discarding untyped keywords.
 func TestNormalizedParameters_ReceivedSchemaIsVerbatim(t *testing.T) {
-	for _, input := range []string{`{}`, `{"properties":{},"required":[]}`, `{"type":"object","additionalProperties":false}`, `false`} {
+	for _, tc := range []struct{ input, want string }{
+		{`{}`, `{"properties":{},"type":"object"}`},
+		{`{"properties":{},"required":[]}`, `{"properties":{},"required":[],"type":"object"}`},
+		{`{"type":"object","additionalProperties":false}`, `{"additionalProperties":false,"properties":{},"type":"object"}`},
+		{`{"type":"object", "properties":{}, "const":9007199254740993}`, `{"type":"object", "properties":{}, "const":9007199254740993}`},
+	} {
 		var schema api.InputSchema
-		if err := json.Unmarshal([]byte(input), &schema); err != nil {
+		if err := json.Unmarshal([]byte(tc.input), &schema); err != nil {
 			t.Fatal(err)
 		}
 		got, err := NormalizedParameters(schema)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if string(got) != input {
-			t.Errorf("received schema changed: got %s, want %s", got, input)
+		if string(got) != tc.want {
+			t.Errorf("got %s, want %s", got, tc.want)
+		}
+	}
+	for _, raw := range []string{`false`, `true`, `[]`, `42`, `"scalar"`} {
+		_, err := NormalizedParameters(api.InputSchema{Raw: json.RawMessage(raw)})
+		var invalid interface {
+			error
+			InvalidField() string
+		}
+		if !errors.As(err, &invalid) || !strings.Contains(err.Error(), "object") {
+			t.Errorf("%s: want typed root-object error, got %T: %v", raw, err, err)
 		}
 	}
 }

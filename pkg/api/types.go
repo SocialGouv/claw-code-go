@@ -92,3 +92,6 @@ type APIError = api.APIError
 // (408, 409, 429, 5xx). Providers that build *APIError values populate the
 // Retryable field from this function.
 var IsRetryableStatus = api.IsRetryableStatus
+
+// RequestValidationError identifies a local invalid or unsupported request.
+type RequestValidationError = api.RequestValidationError
