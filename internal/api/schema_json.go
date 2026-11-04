@@ -74,7 +74,11 @@ func (c *schemaCleaner) clean(v any, path, resource *schemaPath, legacyRefs bool
 		return map[string]any{}, true
 	}
 	if dialect, ok := m["$schema"].(string); ok {
-		legacyRefs = strings.Contains(dialect, "json-schema.org/draft-04/") || strings.Contains(dialect, "json-schema.org/draft-06/") || strings.Contains(dialect, "json-schema.org/draft-07/")
+		legacyRefs = false
+		switch schemaDialect(dialect) {
+		case "json-schema.org/draft-04/schema", "json-schema.org/draft-06/schema", "json-schema.org/draft-07/schema":
+			legacyRefs = true
+		}
 	}
 	changed := false
 	if _, ok := m["$ref"].(string); ok && legacyRefs {
@@ -387,7 +391,7 @@ func convertLegacySchema(m map[string]any, path *schemaPath) bool {
 		changed = true
 	}
 	if dialect, ok := m["$schema"].(string); ok {
-		switch strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(dialect, "https://"), "http://"), "#") {
+		switch schemaDialect(dialect) {
 		case "json-schema.org/draft-04/schema", "json-schema.org/draft-06/schema", "json-schema.org/draft-07/schema", "json-schema.org/draft/2019-09/schema":
 			m["$schema"] = "https://json-schema.org/draft/2020-12/schema"
 			changed = true
@@ -559,4 +563,10 @@ func (c *schemaCleaner) rewriteReferences() bool {
 		}
 	}
 	return changed
+}
+
+// Match only standard dialect URIs, not custom dialects containing a familiar
+// draft name in their path. Custom vocabularies remain opaque to this helper.
+func schemaDialect(uri string) string {
+	return strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(uri, "https://"), "http://"), "#")
 }

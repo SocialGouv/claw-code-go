@@ -1477,5 +1477,28 @@
     "invalid": [
       "x"
     ]
+  },
+  {
+    "name": "custom-dialect-is-opaque",
+    "input": {
+      "$schema": "https://example.test/json-schema.org/draft-07/custom",
+      "type": "string",
+      "$ref": "#/$defs/t",
+      "$defs": {
+        "t": {
+          "type": "string"
+        }
+      }
+    },
+    "want": {
+      "$schema": "https://example.test/json-schema.org/draft-07/custom",
+      "type": "string",
+      "$ref": "#/$defs/t",
+      "$defs": {
+        "t": {
+          "type": "string"
+        }
+      }
+    }
   }
 ]

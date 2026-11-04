@@ -160,19 +160,6 @@ func TestSchemaRawNormalizationBoundaries(t *testing.T) {
 			t.Errorf("manual Raw: %q, %v", out, err)
 		}
 	}
-	// A snapshot comparison must notice in-place writes as well as replacement.
-	for _, v := range []any{&s, &p} {
-		if err := json.Unmarshal([]byte(`{"minimum":0}`), v); err != nil {
-			t.Fatal(err)
-		}
-	}
-	s.Raw[11] = 'x'
-	p.Raw[11] = 'x'
-	for _, v := range []any{s, p} {
-		if _, err := json.Marshal(v); err == nil {
-			t.Errorf("stale cache accepted changed Raw: %T", v)
-		}
-	}
 }
 
 func TestSchemaNumberLexemes(t *testing.T) {
@@ -193,5 +180,44 @@ func TestSchemaNumberLexemes(t *testing.T) {
 		if got := numberIs(json.Number(tc.n), tc.integer); got != tc.want {
 			t.Errorf("numberIs(%s,%v)=%v", tc.n, tc.integer, got)
 		}
+	}
+}
+
+func TestSchemaRawEditsAreNormalized(t *testing.T) {
+	for _, name := range []string{"InputSchema", "Property"} {
+		t.Run(name, func(t *testing.T) {
+			var s InputSchema
+			var p Property
+			var target interface {
+				UnmarshalJSON([]byte) error
+				MarshalJSON() ([]byte, error)
+			}
+			var raw *json.RawMessage
+			if name == "InputSchema" {
+				target = &s
+				raw = &s.Raw
+			} else {
+				target = &p
+				raw = &p.Raw
+			}
+			if err := target.UnmarshalJSON([]byte(`{"exclusiveMinimum":1000}`)); err != nil {
+				t.Fatal(err)
+			}
+			// Same-length in-place edit: still valid JSON, now invalid 2020-12.
+			// json.Marshal cannot mask a stale-cache defect by rejecting its syntax.
+			copy((*raw)[len(*raw)-5:], []byte("true}"))
+			if !json.Valid(*raw) {
+				t.Fatal("mutation witness must remain valid JSON")
+			}
+			for _, mode := range []string{"in-place", "replacement"} {
+				if mode == "replacement" {
+					*raw = json.RawMessage(`{"required":null}`)
+				}
+				out, err := target.MarshalJSON()
+				if err != nil || string(out) != "{}" {
+					t.Errorf("%s edit bypassed cleanup: %s, %v", mode, out, err)
+				}
+			}
+		})
 	}
 }
